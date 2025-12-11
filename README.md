@@ -1,64 +1,27 @@
-# Stock Manager UI Template
+# Aurora Stock (JS + Vite)
 
-This repo is a **frontend template** for a stock / inventory management system
-(multi-site, healthcare-friendly) that you can reuse for future projects.
+This is a **JavaScript** version of the Aurora Stock Control UI.
 
-It is not a fully wired app, but it contains:
+It is a complete Vite + React + Tailwind project with three demo pages:
 
-- Layout shell with navigation, user menu, and alert badge
-- Types and JSON schema for `StockItem`
-- An improved mobile barcode scanner component
-- Original raw code you uploaded (dashboard, inventory, audit, etc.) in `/raw`
-- Design notes so you can keep a consistent look & feel
+- Dashboard
+- Inventory
+- Alerts
 
-## Folder Structure
+The data on these pages is currently **mocked** (hard-coded) so that the UI
+works without any backend. Later, you can wire it to a real API.
 
-```text
-stock-manager-template/
-├─ .gitignore
-├─ README.md
-├─ raw/
-│  ├─ dashboard.txt
-│  ├─ inventory.txt
-│  └─ componenets.txt
-├─ docs/
-│  ├─ DESIGN.md
-│  └─ BARCODE_SCANNER.md
-└─ src/
-   ├─ layout/
-   │  └─ Layout.tsx
-   ├─ types/
-   │  ├─ StockItem.schema.json
-   │  └─ stock.ts
-   └─ components/
-      └─ stock/
-         └─ MobileBarcodeScanner.tsx
-```
-
-You can initialise this as a GitHub repo:
+## Getting started
 
 ```bash
-cd stock-manager-template
-git init
-git add .
-git commit -m "Initial stock manager UI template"
-git remote add origin <your-repo-url>
-git push -u origin main
+npm install
+npm run dev
 ```
 
-## Using in a new project
+Then open the URL printed in the terminal (usually http://localhost:5173).
 
-1. Create a new React + TypeScript + Tailwind project (e.g. with Vite).
-2. Copy the `src/` folder from this template into your new project.
-3. Install required deps (example):
-   - `@tanstack/react-query`
-   - `react-router-dom`
-   - `lucide-react`
-   - Your UI kit (e.g. shadcn/ui)
-   - `@zxing/browser` (for the barcode scanner)
-4. Wire `Layout.tsx` around your routes.
-5. Implement the missing pieces like:
-   - `base44` client
-   - `PermissionsProvider`
-   - `navigation` + `createPageUrl`
-   - Actual page components (Dashboard, Inventory, Alerts, etc.) using your raw code.
+## Where to put this
+
+- Extract this folder into your GitHub Desktop repo folder for `aurora-stock`.
+- GitHub Desktop will show all files as new.
+- Commit & push to put the full project into GitHub.
