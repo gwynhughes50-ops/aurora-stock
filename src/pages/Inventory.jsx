@@ -1,183 +1,274 @@
-import React, { useState, useMemo } from "react";
-import { Card } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Search, Package, AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
-const mockItems = [
-  {
-    id: 1,
-    name: "Adult flu vaccine",
-    site: "Main site",
-    location: "Vaccine fridge",
-    current_stock: 84,
-    min_stock: 20,
-    category: "vaccines",
-    expiry_date: "2026-01-18",
-  },
-  {
-    id: 2,
-    name: "Adrenaline 1:1000 (EpiPen)",
-    site: "Main site",
-    location: "Resus trolley",
-    current_stock: 2,
-    min_stock: 6,
-    category: "emergency_drugs",
-    expiry_date: "2024-10-01",
-  },
-  {
-    id: 3,
-    name: "Dressing packs",
-    site: "Branch A",
-    location: "Treatment room",
-    current_stock: 14,
-    min_stock: 40,
-    category: "dressings",
-    expiry_date: null,
-  },
-];
+import MobileBarcodeScanner from "@/components/ui/MobileBarcodeScanner";
+import PhotoCapture from "@/components/ui/PhotoCapture";
+
+import StockMovementDialog from "@/components/stock/StockMovementDialog";
+import StockHistoryDialog from "@/components/stock/StockHistoryDialog";
+import ManualAddItemDialog from "@/components/stock/ManualAddItemDialog";
+
+import useStock from "@/hooks/useStock";
+import { getRole, canArchive, canEdit, canMoveStock } from "@/auth/permissions";
+import { auth } from "@/lib/firebase";
+
+import {
+  Search,
+  Package,
+  Tag,
+  Pencil,
+  History,
+  Trash2,
+  Archive,
+  RotateCcw,
+} from "lucide-react";
+
+/* helpers */
+const getStockBadge = (qty, min) =>
+  qty <= min
+    ? "bg-rose-500/20 text-rose-300"
+    : "bg-emerald-500/20 text-emerald-300";
 
 export default function Inventory() {
+  /* auth */
+  const user = auth.currentUser;
+  const role = getRole(user);
+
+  /* state */
+  const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return mockItems;
-    const q = search.toLowerCase();
-    return mockItems.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.site.toLowerCase().includes(q) ||
-        item.location.toLowerCase().includes(q)
-    );
-  }, [search]);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveMode, setMoveMode] = useState("use");
+  const [activeItem, setActiveItem] = useState(null);
 
-  const lowStock = filtered.filter(
-    (item) => item.current_stock > 0 && item.current_stock <= item.min_stock
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItem, setHistoryItem] = useState(null);
+
+  const [manualAddOpen, setManualAddOpen] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteItem, setDeleteItem] = useState(null);
+
+  /* stock hook */
+  const {
+    items,
+    loading,
+    error,
+    archiveItem,
+    restoreItem,
+    receiveStock,
+    useStockQty,
+    addItem,
+    updateItem,
+  } = useStock({ includeArchived: showArchived });
+
+  /* handlers */
+  const openDelete = (item) => {
+    if (!canArchive(role)) return;
+    setDeleteItem(item);
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+    await archiveItem(deleteItem.id, user);
+    setDeleteOpen(false);
+    setDeleteItem(null);
+  };
+
+  const openUse = (item) => {
+    setActiveItem(item);
+    setMoveMode("use");
+    setMoveOpen(true);
+  };
+
+  const openReceive = (item) => {
+    setActiveItem(item);
+    setMoveMode("receive");
+    setMoveOpen(true);
+  };
+
+  const filtered = items.filter((it) =>
+    it.name?.toLowerCase().includes(search.toLowerCase())
   );
-  const outOfStock = filtered.filter((item) => item.current_stock === 0);
 
+  /* render */
   return (
     <div className="space-y-5">
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex-1">
-          <div className="relative">
+      {/* Sticky top bar */}
+      <div className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur p-3 rounded-2xl border border-slate-800/60">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search by name, site or location"
+              placeholder="Search inventory…"
+              className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
             />
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="text-xs px-3 py-2">
-            Live fridge alerts
+
+          <Button variant="ghost" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? "Hide archived" : "Show archived"}
           </Button>
-          <Button className="text-xs px-3 py-2">+ Add stock item</Button>
+
+          <Button onClick={() => setManualAddOpen(true)}>Add item</Button>
+
+          <MobileBarcodeScanner />
         </div>
-      </section>
+      </div>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.2fr)]">
-        <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Card className="p-4">
-              <p className="text-[0.7rem] font-medium uppercase tracking-wide text-slate-400">
-                Total items
-              </p>
-              <p className="mt-1 text-3xl font-semibold">{filtered.length}</p>
-              <p className="mt-1 text-xs text-slate-400">
-                Matching current filters.
-              </p>
-            </Card>
-            <Card className="p-4 border-amber-400/25 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-slate-900">
-              <p className="text-[0.7rem] font-medium uppercase tracking-wide text-amber-100/90">
-                Low stock
-              </p>
-              <p className="mt-1 text-3xl font-semibold text-amber-50">
-                {lowStock.length}
-              </p>
-              <p className="mt-1 text-xs text-amber-100/80">
-                At or below minimum level.
-              </p>
-            </Card>
-            <Card className="p-4 border-rose-500/30 bg-gradient-to-br from-rose-600/15 via-rose-500/10 to-slate-900">
-              <p className="text-[0.7rem] font-medium uppercase tracking-wide text-rose-100/90">
-                Out of stock
-              </p>
-              <p className="mt-1 text-3xl font-semibold text-rose-50">
-                {outOfStock.length}
-              </p>
-              <p className="mt-1 text-xs text-rose-100/80">
-                Items at zero stock.
-              </p>
-            </Card>
-          </div>
+      {loading && <p className="text-slate-400">Loading inventory…</p>}
+      {error && <p className="text-rose-400">{String(error)}</p>}
 
-          <Card className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                Stock overview
-              </p>
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-800/80 px-2 py-1 text-[0.7rem] text-slate-200">
-                <Package className="h-3 w-3" />
-                Demo data only
-              </span>
-            </div>
+      {/* Grid */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filtered.map((item) => {
+          const archived = Boolean(item.archived_at);
 
-            <div className="space-y-2">
-              {filtered.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-3 text-sm"
-                >
-                  <div>
-                    <p className="font-medium text-slate-50">{item.name}</p>
-                    <p className="text-xs text-slate-400">
-                      {item.site} • {item.location}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-xs">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 ${
-                        item.current_stock === 0
-                          ? "bg-rose-500/20 text-rose-100"
-                          : item.current_stock <= item.min_stock
-                          ? "bg-amber-500/20 text-amber-100"
-                          : "bg-emerald-500/20 text-emerald-100"
-                      }`}
-                    >
-                      {item.current_stock} in stock
-                    </span>
-                    {item.current_stock === 0 && (
-                      <span className="inline-flex items-center gap-1 text-rose-100">
-                        <AlertTriangle className="h-3 w-3" />
-                        Replace urgently
-                      </span>
-                    )}
-                  </div>
+          return (
+            <Card
+              key={item.id}
+              className={`p-4 rounded-2xl border ${
+                archived
+                  ? "bg-slate-900/40 text-slate-400"
+                  : "bg-slate-900/90 text-slate-100"
+              }`}
+            >
+              <div className="flex justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{item.name}</p>
+                  {item.barcode && (
+                    <p className="text-xs text-slate-400">{item.barcode}</p>
+                  )}
                 </div>
-              ))}
-            </div>
-          </Card>
-        </div>
 
-        <aside className="space-y-4">
-          <Card className="p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                Suggested actions
-              </p>
-              <AlertTriangle className="h-4 w-4 text-amber-300" />
+                <span
+                  className={`px-2 py-0.5 text-xs rounded-full ${getStockBadge(
+                    item.current_stock,
+                    item.min_stock
+                  )}`}
+                >
+                  {item.current_stock}
+                </span>
+              </div>
+
+              {!archived && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => openUse(item)}
+                    disabled={!canMoveStock(role)}
+                  >
+                    − Use
+                  </Button>
+                  <Button
+                    onClick={() => openReceive(item)}
+                    disabled={!canMoveStock(role)}
+                  >
+                    + Receive
+                  </Button>
+                </div>
+              )}
+
+              <div className="mt-3 flex justify-between items-center">
+                <PhotoCapture
+                  buttonLabel="Photo"
+                  onCapture={(img) =>
+                    updateItem(item.id, { photo_url: img })
+                  }
+                />
+
+                <div className="flex gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => openDelete(item)}
+                    disabled={!canArchive(role)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+
+                  {!archived ? (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => archiveItem(item.id, user)}
+                    >
+                      <Archive className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => restoreItem(item.id, user)}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {archived && (
+                <div className="mt-3 text-xs text-slate-500">Archived</div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* dialogs */}
+      <StockMovementDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        item={activeItem}
+        mode={moveMode}
+        onConfirm={async ({ qty }) => {
+          if (!activeItem) return;
+          if (moveMode === "receive") {
+            await receiveStock(activeItem.id, qty, { actor: user });
+          } else {
+            await useStockQty(activeItem.id, qty, { actor: user });
+          }
+        }}
+      />
+
+      <StockHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        item={historyItem}
+      />
+
+      <ManualAddItemDialog
+        open={manualAddOpen}
+        onOpenChange={setManualAddOpen}
+        onCreate={addItem}
+      />
+
+      {/* Delete confirm */}
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-slate-900 p-4 rounded-2xl max-w-sm w-full">
+            <p className="font-semibold text-rose-300">Archive item?</p>
+            <p className="text-sm text-slate-400 mt-1">
+              You are about to archive{" "}
+              <strong>{deleteItem?.name}</strong>.
+            </p>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button className="bg-rose-500" onClick={confirmDelete}>
+                Yes, archive
+              </Button>
             </div>
-            <ul className="space-y-1.5 text-xs text-slate-200">
-              <li>• Replace expired or out-of-stock emergency drugs.</li>
-              <li>• Review vaccine batches nearing expiry.</li>
-              <li>• Confirm physical counts for items marked at zero stock.</li>
-            </ul>
-          </Card>
-        </aside>
-      </section>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
