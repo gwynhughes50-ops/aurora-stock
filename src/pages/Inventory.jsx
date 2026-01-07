@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ import { auth } from "@/lib/firebase";
 import {
   Search,
   Package,
-  Tag,
   Pencil,
   History,
   Trash2,
@@ -26,10 +25,11 @@ import {
 } from "lucide-react";
 
 /* helpers */
-const getStockBadge = (qty, min) =>
-  qty <= min
-    ? "bg-rose-500/20 text-rose-300"
-    : "bg-emerald-500/20 text-emerald-300";
+const getStockBadge = (qty, min) => {
+  const q = Number(qty ?? 0);
+  const m = Number(min ?? 0);
+  return q <= m ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300";
+};
 
 export default function Inventory() {
   /* auth */
@@ -52,6 +52,20 @@ export default function Inventory() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
 
+  // NEW: edit modal state (so we don't depend on ManualAddItemDialog internals)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    barcode: "",
+    site: "",
+    location: "",
+    category: "",
+    min_stock: 0,
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
   /* stock hook */
   const {
     items,
@@ -64,6 +78,29 @@ export default function Inventory() {
     addItem,
     updateItem,
   } = useStock({ includeArchived: showArchived });
+
+  /* derived */
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+
+    // Search by name, barcode, site, location, category
+    return items.filter((it) => {
+      const name = String(it?.name || "").toLowerCase();
+      const barcode = String(it?.barcode || "").toLowerCase();
+      const site = String(it?.site || "").toLowerCase();
+      const location = String(it?.location || "").toLowerCase();
+      const category = String(it?.category || "").toLowerCase();
+
+      return (
+        name.includes(q) ||
+        barcode.includes(q) ||
+        site.includes(q) ||
+        location.includes(q) ||
+        category.includes(q)
+      );
+    });
+  }, [items, search]);
 
   /* handlers */
   const openDelete = (item) => {
@@ -91,9 +128,75 @@ export default function Inventory() {
     setMoveOpen(true);
   };
 
-  const filtered = items.filter((it) =>
-    it.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  const openHistory = (item) => {
+    setHistoryItem(item);
+    setHistoryOpen(true);
+  };
+
+  const openEdit = (item) => {
+    if (!canEdit(role)) return;
+    setEditItem(item);
+    setEditForm({
+      name: item?.name ?? "",
+      barcode: item?.barcode ?? "",
+      site: item?.site ?? "",
+      location: item?.location ?? "",
+      category: item?.category ?? "",
+      min_stock:
+        typeof item?.min_stock === "number"
+          ? item.min_stock
+          : Number(item?.min_stock ?? 0) || 0,
+    });
+    setEditError("");
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editItem) return;
+
+    setEditError("");
+    setEditSaving(true);
+
+    try {
+      const name = (editForm.name || "").trim();
+      const site = (editForm.site || "").trim();
+      const location = (editForm.location || "").trim();
+
+      if (!name) {
+        setEditError("Item name cannot be empty.");
+        return;
+      }
+
+      if (!site || site.toLowerCase() === "both sites") {
+        setEditError("Please enter a valid building name in Site (not “Both sites”).");
+        return;
+      }
+
+      if (!location) {
+        setEditError("Location is required (room/cupboard).");
+        return;
+      }
+
+      const payload = {
+        name,
+        barcode: (editForm.barcode || "").trim(),
+        site,
+        location,
+        category: (editForm.category || "").trim(),
+        min_stock: Number(editForm.min_stock) || 0,
+      };
+
+      await updateItem(editItem.id, payload, { actor: user });
+
+      setEditOpen(false);
+      setEditItem(null);
+    } catch (err) {
+      console.error("Edit save failed:", err);
+      setEditError(err?.message || String(err));
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   /* render */
   return (
@@ -104,7 +207,7 @@ export default function Inventory() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search inventory…"
+              placeholder="Search inventory… (name, barcode, site, room)"
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -139,18 +242,42 @@ export default function Inventory() {
               }`}
             >
               <div className="flex justify-between gap-3">
-                <div>
-                  <p className="font-semibold">{item.name}</p>
+                <div className="min-w-0">
+                  <p className="font-semibold truncate">{item.name}</p>
+
                   {item.barcode && (
-                    <p className="text-xs text-slate-400">{item.barcode}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {item.barcode}
+                    </p>
+                  )}
+
+                  {/* location display (site + room/location) */}
+                  {(item.site || item.location) && (
+                    <p className="mt-1 text-xs text-slate-300 flex items-center gap-1 truncate">
+                      <Package className="h-3 w-3 opacity-70" />
+                      <span className="truncate">
+                        {item.site || "—"}
+                        {item.location ? ` · ${item.location}` : ""}
+                      </span>
+                    </p>
+                  )}
+
+                  {/* category + min stock */}
+                  {(item.category || item.min_stock !== undefined) && (
+                    <p className="mt-1 text-[11px] text-slate-400 truncate">
+                      {item.category ? `${item.category}` : ""}
+                      {item.category && item.min_stock !== undefined ? " · " : ""}
+                      {item.min_stock !== undefined ? `Min: ${item.min_stock}` : ""}
+                    </p>
                   )}
                 </div>
 
                 <span
-                  className={`px-2 py-0.5 text-xs rounded-full ${getStockBadge(
+                  className={`shrink-0 px-2 py-0.5 text-xs rounded-full ${getStockBadge(
                     item.current_stock,
                     item.min_stock
                   )}`}
+                  title={`Current stock: ${item.current_stock}`}
                 >
                   {item.current_stock}
                 </span>
@@ -177,17 +304,35 @@ export default function Inventory() {
               <div className="mt-3 flex justify-between items-center">
                 <PhotoCapture
                   buttonLabel="Photo"
-                  onCapture={(img) =>
-                    updateItem(item.id, { photo_url: img })
-                  }
+                  onCapture={(img) => updateItem(item.id, { photo_url: img }, { actor: user })}
                 />
 
                 <div className="flex gap-1">
                   <Button
                     size="icon"
                     variant="ghost"
+                    onClick={() => openHistory(item)}
+                    title="History"
+                  >
+                    <History className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => openEdit(item)}
+                    disabled={!canEdit(role)}
+                    title="Edit"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+
+                  <Button
+                    size="icon"
+                    variant="ghost"
                     onClick={() => openDelete(item)}
                     disabled={!canArchive(role)}
+                    title="Archive (via confirm)"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -197,6 +342,7 @@ export default function Inventory() {
                       size="icon"
                       variant="ghost"
                       onClick={() => archiveItem(item.id, user)}
+                      title="Archive"
                     >
                       <Archive className="h-4 w-4" />
                     </Button>
@@ -205,6 +351,7 @@ export default function Inventory() {
                       size="icon"
                       variant="ghost"
                       onClick={() => restoreItem(item.id, user)}
+                      title="Restore"
                     >
                       <RotateCcw className="h-4 w-4" />
                     </Button>
@@ -248,27 +395,149 @@ export default function Inventory() {
         onCreate={addItem}
       />
 
-      {/* Delete confirm */}
-      {deleteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-900 p-4 rounded-2xl max-w-sm w-full">
-            <p className="font-semibold text-rose-300">Archive item?</p>
-            <p className="text-sm text-slate-400 mt-1">
-              You are about to archive{" "}
-              <strong>{deleteItem?.name}</strong>.
-            </p>
+      {/* MODALS WRAPPER */}
+      <>
+        {/* Edit modal */}
+        {editOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="bg-slate-900 p-4 rounded-2xl max-w-md w-full border border-slate-800">
+              <p className="font-semibold text-slate-100">Edit item</p>
+              <p className="text-sm text-slate-400 mt-1">
+                Update details so staff can find items quickly (e.g. “Main Branch · Room D90”).
+              </p>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button className="bg-rose-500" onClick={confirmDelete}>
-                Yes, archive
-              </Button>
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Item name *</p>
+                  <Input
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    placeholder="e.g. Syringe 10ml"
+                  />
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Barcode</p>
+                  <Input
+                    value={editForm.barcode}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, barcode: e.target.value }))
+                    }
+                    placeholder="Optional"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">Site (building) *</p>
+                    <Input
+                      value={editForm.site}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, site: e.target.value }))
+                      }
+                      placeholder="e.g. Main Branch"
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">Room / Location *</p>
+                    <Input
+                      value={editForm.location}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, location: e.target.value }))
+                      }
+                      placeholder="e.g. Room D90"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">Category</p>
+                    <Input
+                      value={editForm.category}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, category: e.target.value }))
+                      }
+                      placeholder="e.g. Dressings"
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">Min stock</p>
+                    <Input
+                      type="number"
+                      value={editForm.min_stock}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, min_stock: e.target.value }))
+                      }
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {editError && <p className="mt-3 text-sm text-rose-300">{editError}</p>}
+
+              <div className="mt-5 flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditOpen(false);
+                    setEditItem(null);
+                    setEditError("");
+                    setEditSaving(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  onClick={saveEdit}
+                  disabled={
+                    editSaving ||
+                    !editForm.name?.trim() ||
+                    !editForm.site?.trim() ||
+                    editForm.site?.trim().toLowerCase() === "both sites" ||
+                    !editForm.location?.trim()
+                  }
+                >
+                  {editSaving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Delete confirm */}
+        {deleteOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="bg-slate-900 p-4 rounded-2xl max-w-sm w-full border border-slate-800">
+              <p className="font-semibold text-rose-300">Archive item?</p>
+              <p className="text-sm text-slate-400 mt-1">
+                You are about to archive <strong>{deleteItem?.name}</strong>.
+              </p>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteItem(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button className="bg-rose-500" onClick={confirmDelete}>
+                  Yes, archive
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     </div>
   );
 }
