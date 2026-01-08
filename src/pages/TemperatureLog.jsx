@@ -11,24 +11,18 @@ import {
   Printer,
   AlertTriangle,
   CheckCircle,
-  Droplets,
 } from "lucide-react";
 
 import {
   collection,
   addDoc,
-  deleteDoc,
   doc,
   onSnapshot,
   query,
-  where,
   orderBy,
   serverTimestamp,
   updateDoc,
-  getDocs,
-  limit,
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
 import { db } from "../lib/firebase";
 
 /* =========================================================
@@ -38,9 +32,6 @@ import { db } from "../lib/firebase";
 const TEMP_COLLECTION = "temperature_logs";
 const UNITS_COLLECTION = "temperature_units";
 const INCIDENTS_COLLECTION = "temperature_incidents";
-
-const WATER_OUTLETS_COLLECTION = "water_outlets";
-const WATER_ROUNDS_COLLECTION = "water_temp_rounds"; // (kept for next step)
 
 // Labels only; actual siteId comes from your docs.
 const SITES = [
@@ -135,15 +126,6 @@ function getCurrentRole() {
   return localStorage.getItem("aurora_role") || "practice_manager";
 }
 
-function getAuthUidSafe() {
-  try {
-    const auth = getAuth();
-    return auth?.currentUser?.uid || "";
-  } catch {
-    return "";
-  }
-}
-
 /* =========================================================
    Tab Button UI
    ========================================================= */
@@ -166,11 +148,11 @@ function TabButton({ active, onClick, icon: Icon, label }) {
 }
 
 /* =========================================================
-   MAIN PAGE (Tabs: Log + Incidents + Water Temps)
+   MAIN PAGE (Tabs: Log + Incidents)
    ========================================================= */
 
 export default function TemperatureLog() {
-  const [tab, setTab] = useState("log"); // log | incidents | water
+  const [tab, setTab] = useState("log"); // log | incidents
 
   return (
     <div className="space-y-6">
@@ -192,503 +174,15 @@ export default function TemperatureLog() {
         <div className="flex flex-wrap gap-2">
           <TabButton active={tab === "log"} onClick={() => setTab("log")} icon={Thermometer} label="Log" />
           <TabButton active={tab === "incidents"} onClick={() => setTab("incidents")} icon={AlertTriangle} label="Incidents" />
-          <TabButton active={tab === "water"} onClick={() => setTab("water")} icon={Droplets} label="Water Temps" />
         </div>
       </Card>
 
       {tab === "log" && <TemperatureLogTab />}
       {tab === "incidents" && <TemperatureIncidentsTab />}
-      {tab === "water" && <WaterTempsTab />}
     </div>
   );
 }
 
-/* =========================================================
-   TAB: Water Temps (Outlets list + add/delete)
-   ========================================================= */
-
-   function WaterTempsTab() {
-    const SITE_ID = "main_branch";
-  
-    const [outlets, setOutlets] = useState([]);
-    const [isAddOpen, setIsAddOpen] = useState(false);
-    const [error, setError] = useState("");
-  
-    // Rounds
-    const [todayRound, setTodayRound] = useState(null);
-    const [roundEntries, setRoundEntries] = useState([]);
-    const [roundMsg, setRoundMsg] = useState("");
-  
-    const [form, setForm] = useState({
-      location: "",
-      outletName: "",
-      outletType: "Hot Tap",
-      frequency: "weekly",
-    });
-  
-    const todayKey = useMemo(() => {
-      const d = new Date();
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return `${y}-${m}-${day}`;
-    }, []);
-  
-    // ---------- Load outlets (supports legacy + new schema) ----------
-    useEffect(() => {
-      const qy = query(collection(db, WATER_OUTLETS_COLLECTION));
-      return onSnapshot(
-        qy,
-        (snap) => {
-          const rows = snap.docs.map((d) => {
-            const data = d.data() || {};
-            const siteId = String(data.siteId ?? data.site ?? "").trim();
-            const outletName = String(data.outletName ?? data.name ?? "").trim();
-            const outletType = String(data.outletType ?? data.type ?? "").trim();
-            const location = String(data.location ?? "").trim();
-            const frequency = String(data.frequency ?? "weekly").trim();
-            const active = data.active !== false;
-            const order = safeNumber(data.order) ?? safeNumber(data.sortOrder) ?? 9999;
-  
-            return {
-              id: d.id,
-              siteId,
-              outletName,
-              outletType,
-              location,
-              frequency,
-              active,
-              order,
-            };
-          });
-  
-          const filtered = rows
-            .filter((o) => o.active && o.siteId === SITE_ID)
-            .sort((a, b) => {
-              const loc = String(a.location).localeCompare(String(b.location));
-              if (loc !== 0) return loc;
-              const ord = (a.order ?? 9999) - (b.order ?? 9999);
-              if (ord !== 0) return ord;
-              return String(a.outletName).localeCompare(String(b.outletName));
-            });
-  
-          setOutlets(filtered);
-        },
-        (err) => console.error("water_outlets subscribe error:", err)
-      );
-    }, []);
-  
-    // ---------- Load today's round (if exists) ----------
-    useEffect(() => {
-      const qy = query(
-        collection(db, WATER_ROUNDS_COLLECTION),
-        where("siteId", "==", SITE_ID),
-        where("dateKey", "==", todayKey),
-        limit(1)
-      );
-  
-      return onSnapshot(
-        qy,
-        (snap) => {
-          if (snap.empty) {
-            setTodayRound(null);
-            setRoundEntries([]);
-            return;
-          }
-          const d = snap.docs[0];
-          const data = d.data() || {};
-          const round = { id: d.id, ...data };
-          setTodayRound(round);
-          setRoundEntries(Array.isArray(round.entries) ? round.entries : []);
-        },
-        (err) => console.error("water_temp_rounds subscribe error:", err)
-      );
-    }, [todayKey]);
-  
-    const resetForm = () => {
-      setForm({
-        location: "",
-        outletName: "",
-        outletType: "Hot Tap",
-        frequency: "weekly",
-      });
-      setError("");
-    };
-  
-    const createOutlet = async () => {
-      setError("");
-      if (!form.location.trim()) return setError("Location is required.");
-      if (!form.outletName.trim()) return setError("Outlet name is required.");
-  
-      const nextOrder = (outlets.reduce((m, o) => Math.max(m, o.order ?? 0), 0) || 0) + 1;
-  
-      const name = form.outletName.trim();
-      const typeLabel = form.outletType.trim();
-      const legacyType =
-        typeLabel.toLowerCase().includes("cold") ? "cold" : typeLabel.toLowerCase().includes("hot") ? "hot" : typeLabel;
-  
-      try {
-        await addDoc(collection(db, WATER_OUTLETS_COLLECTION), {
-          // new schema
-          siteId: SITE_ID,
-          outletName: name,
-          outletType: typeLabel,
-  
-          // legacy schema (keeps older rounds happy)
-          site: SITE_ID,
-          name,
-          type: legacyType,
-  
-          location: form.location.trim(),
-          frequency: form.frequency,
-          active: true,
-          order: nextOrder,
-          createdAt: serverTimestamp(),
-          createdByUid: getAuthUidSafe(),
-        });
-  
-        resetForm();
-        setIsAddOpen(false);
-      } catch (e) {
-        console.error("Create outlet error:", e);
-        setError("Failed to create outlet.");
-      }
-    };
-  
-    const deleteOutlet = async (id, name) => {
-      if (!window.confirm(`Delete outlet "${name}"?`)) return;
-      try {
-        await deleteDoc(doc(db, WATER_OUTLETS_COLLECTION, id));
-      } catch (e) {
-        console.error("Delete outlet error:", e);
-        alert("Could not delete outlet.");
-      }
-    };
-  
-    // ---------- Round helpers ----------
-    const startOrResumeRound = async () => {
-      setRoundMsg("");
-  
-      // If already exists, just use it
-      if (todayRound?.id) {
-        setRoundMsg("Resumed today's round.");
-        return;
-      }
-  
-      // Build entries snapshot from current outlets
-      const entries = outlets.map((o) => ({
-        outletId: o.id,
-        outletNameSnapshot: o.outletName,
-        outletLocationSnapshot: o.location,
-        frequencySnapshot: o.frequency,
-        type: (o.outletType || "").toLowerCase().includes("cold") ? "cold" : "hot",
-        tempC: null,
-        secondsToStable: null,
-        flushed: false,
-        notes: "",
-      }));
-  
-      try {
-        await addDoc(collection(db, WATER_ROUNDS_COLLECTION), {
-          siteId: SITE_ID,
-          dateKey: todayKey,
-          status: "in_progress",
-          entries,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          createdByUid: getAuthUidSafe(),
-        });
-        setRoundMsg("Started today's round.");
-      } catch (e) {
-        console.error("Start round error:", e);
-        setRoundMsg("Failed to start round. Check rules/permissions.");
-      }
-    };
-  
-    const updateEntry = (idx, patch) => {
-      setRoundEntries((prev) => {
-        const copy = [...prev];
-        copy[idx] = { ...copy[idx], ...patch };
-        return copy;
-      });
-    };
-  
-    const saveRound = async () => {
-      setRoundMsg("");
-      if (!todayRound?.id) return setRoundMsg("No round to save.");
-  
-      try {
-        await updateDoc(doc(db, WATER_ROUNDS_COLLECTION, todayRound.id), {
-          entries: roundEntries,
-          updatedAt: serverTimestamp(),
-        });
-        setRoundMsg("Round saved.");
-      } catch (e) {
-        console.error("Save round error:", e);
-        setRoundMsg("Failed to save round.");
-      }
-    };
-  
-    const markComplete = async () => {
-      setRoundMsg("");
-      if (!todayRound?.id) return setRoundMsg("No round to complete.");
-  
-      try {
-        await updateDoc(doc(db, WATER_ROUNDS_COLLECTION, todayRound.id), {
-          status: "completed",
-          entries: roundEntries,
-          updatedAt: serverTimestamp(),
-        });
-        setRoundMsg("Round marked complete.");
-      } catch (e) {
-        console.error("Complete round error:", e);
-        setRoundMsg("Failed to complete round.");
-      }
-    };
-  
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-100">Water Temperatures</h2>
-            <p className="text-sm text-slate-400">Legionella monitoring outlets and rounds.</p>
-          </div>
-  
-          <Button
-            className="rounded-full bg-gradient-to-r from-cyan-400 to-emerald-300 text-slate-950 text-xs"
-            onClick={() => setIsAddOpen(true)}
-          >
-            + Add Outlet
-          </Button>
-        </div>
-  
-        {/* Outlets list */}
-        <Card className="border border-white/10 bg-slate-900/60">
-          <div className="divide-y divide-white/10">
-            {outlets.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs text-slate-400">No water outlets found for Main Branch.</div>
-            ) : (
-              outlets.map((o) => (
-                <div key={o.id} className="px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium text-slate-100">{o.outletName || "Unnamed outlet"}</div>
-                    <div className="text-xs text-slate-400">
-                      {o.location || "—"} • {o.outletType || "—"} • {o.frequency || "weekly"}
-                    </div>
-                  </div>
-  
-                  <Button
-                    variant="outline"
-                    className="text-xs border-white/10 bg-slate-900/40 text-rose-300 hover:bg-slate-900/60"
-                    onClick={() => deleteOutlet(o.id, o.outletName || "Outlet")}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-  
-        {/* Rounds */}
-        <Card className="border border-white/10 bg-slate-900/60 p-4 space-y-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-100">Today's round</div>
-              <div className="text-xs text-slate-400">
-                Date: <span className="text-slate-200">{todayKey}</span>{" "}
-                {todayRound?.status ? (
-                  <>
-                    • Status: <span className="text-slate-200">{todayRound.status}</span>
-                  </>
-                ) : (
-                  "• Not started"
-                )}
-              </div>
-            </div>
-  
-            <div className="flex gap-2">
-              <Button
-                className="rounded-full bg-emerald-400 text-slate-950 hover:bg-emerald-300 text-xs"
-                onClick={startOrResumeRound}
-              >
-                {todayRound?.id ? "Resume round" : "Start round"}
-              </Button>
-  
-              <Button
-                variant="outline"
-                className="rounded-full border-white/10 bg-slate-900/40 text-xs text-slate-200 hover:bg-slate-900/60"
-                onClick={saveRound}
-                disabled={!todayRound?.id}
-              >
-                Save
-              </Button>
-  
-              <Button
-                variant="outline"
-                className="rounded-full border-white/10 bg-slate-900/40 text-xs text-slate-200 hover:bg-slate-900/60"
-                onClick={markComplete}
-                disabled={!todayRound?.id}
-              >
-                Mark complete
-              </Button>
-            </div>
-          </div>
-  
-          {roundMsg && (
-            <div className="rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2 text-xs text-slate-200">
-              {roundMsg}
-            </div>
-          )}
-  
-          {!todayRound?.id ? (
-            <div className="text-xs text-slate-400">
-              Start a round to enter temperatures for each outlet.
-            </div>
-          ) : (
-            <div className="divide-y divide-white/10">
-              {roundEntries.map((e, idx) => (
-                <div key={e.outletId || idx} className="py-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-100">
-                        {e.outletNameSnapshot || "Outlet"}
-                        <span className="ml-2 text-xs text-slate-400">
-                          ({e.type || "—"}) • {e.frequencySnapshot || "—"}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-400">{e.outletLocationSnapshot || "—"}</div>
-                    </div>
-  
-                    <div className="flex flex-wrap gap-2">
-                      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2">
-                        <span className="text-xs text-slate-300">Temp °C</span>
-                        <input
-                          className="w-24 bg-transparent text-xs text-slate-100 outline-none"
-                          value={e.tempC === null || e.tempC === undefined ? "" : String(e.tempC)}
-                          onChange={(ev) => {
-                            const v = ev.target.value.trim();
-                            updateEntry(idx, { tempC: v === "" ? null : Number(v) });
-                          }}
-                          placeholder="e.g. 52.1"
-                        />
-                      </div>
-  
-                      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2">
-                        <span className="text-xs text-slate-300">Stable (s)</span>
-                        <input
-                          className="w-20 bg-transparent text-xs text-slate-100 outline-none"
-                          value={e.secondsToStable === null || e.secondsToStable === undefined ? "" : String(e.secondsToStable)}
-                          onChange={(ev) => {
-                            const v = ev.target.value.trim();
-                            updateEntry(idx, { secondsToStable: v === "" ? null : Number(v) });
-                          }}
-                          placeholder="e.g. 30"
-                        />
-                      </div>
-  
-                      <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2 text-xs text-slate-200">
-                        <input
-                          type="checkbox"
-                          checked={!!e.flushed}
-                          onChange={(ev) => updateEntry(idx, { flushed: ev.target.checked })}
-                        />
-                        Flushed
-                      </label>
-                    </div>
-                  </div>
-  
-                  <div className="mt-2">
-                    <Input
-                      value={e.notes || ""}
-                      onChange={(ev) => updateEntry(idx, { notes: ev.target.value })}
-                      placeholder="Notes (optional)"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-  
-        {/* Add outlet modal */}
-        {isAddOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur">
-            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl">
-              <div className="flex items-start justify-between">
-                <h3 className="text-sm font-semibold text-slate-100">Add water outlet</h3>
-                <button
-                  className="text-slate-400 hover:text-slate-200"
-                  onClick={() => {
-                    resetForm();
-                    setIsAddOpen(false);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-  
-              {error && (
-                <div className="mt-3 rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-xs text-rose-200">
-                  {error}
-                </div>
-              )}
-  
-              <div className="mt-4 space-y-3 text-sm">
-                <div>
-                  <label className="text-xs text-slate-300">Location</label>
-                  <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Ground Floor" />
-                </div>
-  
-                <div>
-                  <label className="text-xs text-slate-300">Outlet name</label>
-                  <Input value={form.outletName} onChange={(e) => setForm({ ...form, outletName: e.target.value })} placeholder="e.g. Kitchen Hot Tap" />
-                </div>
-  
-                <div>
-                  <label className="text-xs text-slate-300">Outlet type</label>
-                  <select className={SELECT_CLASS} value={form.outletType} onChange={(e) => setForm({ ...form, outletType: e.target.value })}>
-                    <option>Hot Tap</option>
-                    <option>Cold Tap</option>
-                    <option>Shower</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-  
-                <div>
-                  <label className="text-xs text-slate-300">Check frequency</label>
-                  <select className={SELECT_CLASS} value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-              </div>
-  
-              <div className="mt-5 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className="text-xs border-white/10 bg-slate-900/40"
-                  onClick={() => {
-                    resetForm();
-                    setIsAddOpen(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-  
-                <Button className="rounded-full bg-emerald-400 text-slate-950 text-xs" onClick={createOutlet}>
-                  Save outlet
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
- 
 /* =========================================================
    TAB: Temperature Log (reads temperature_logs + units)
    ========================================================= */
@@ -1219,17 +713,29 @@ function TemperatureLogTab() {
 
               <div>
                 <label className="text-xs text-slate-300">Temperature (°C)</label>
-                <Input value={newReading.temp} onChange={(e) => handleNewChange("temp", e.target.value)} placeholder="e.g. 4.1" />
+                <Input
+                  value={newReading.temp}
+                  onChange={(e) => handleNewChange("temp", e.target.value)}
+                  placeholder="e.g. 4.1"
+                />
               </div>
 
               <div>
                 <label className="text-xs text-slate-300">Recorded by</label>
-                <Input value={newReading.recordedBy} onChange={(e) => handleNewChange("recordedBy", e.target.value)} placeholder="e.g. J. Smith" />
+                <Input
+                  value={newReading.recordedBy}
+                  onChange={(e) => handleNewChange("recordedBy", e.target.value)}
+                  placeholder="e.g. J. Smith"
+                />
               </div>
 
               <div>
                 <label className="text-xs text-slate-300">Notes</label>
-                <Input value={newReading.notes} onChange={(e) => handleNewChange("notes", e.target.value)} placeholder="Optional" />
+                <Input
+                  value={newReading.notes}
+                  onChange={(e) => handleNewChange("notes", e.target.value)}
+                  placeholder="Optional"
+                />
               </div>
             </div>
 
@@ -1618,7 +1124,9 @@ function TemperatureIncidentsTab() {
                             <Thermometer className="h-4 w-4 text-slate-400" />
                             Observed:{" "}
                             <span className="text-slate-100 font-semibold">
-                              {i.observedTemp === null || i.observedTemp === undefined ? "—" : `${i.observedTemp} °C`}
+                              {i.observedTemp === null || i.observedTemp === undefined
+                                ? "—"
+                                : `${i.observedTemp} °C`}
                             </span>
                           </div>
                           {range ? (
@@ -1643,7 +1151,9 @@ function TemperatureIncidentsTab() {
                         </Card>
                       </div>
 
-                      {i.details ? <div className="mt-2 text-xs text-slate-200 whitespace-pre-wrap">{i.details}</div> : null}
+                      {i.details ? (
+                        <div className="mt-2 text-xs text-slate-200 whitespace-pre-wrap">{i.details}</div>
+                      ) : null}
 
                       {i.actionsTaken ? (
                         <div className="mt-2 text-xs text-slate-200">
@@ -1690,7 +1200,7 @@ function TemperatureIncidentsTab() {
         </div>
       </Card>
 
-      {/* New Incident modal (placeholder shell – keep your existing modal if you already had one) */}
+      {/* New Incident modal */}
       {isOpenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur">
           <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl">
@@ -1732,12 +1242,20 @@ function TemperatureIncidentsTab() {
 
               <div>
                 <label className="text-xs text-slate-300">Observed temperature (optional)</label>
-                <Input value={newIncident.observedTemp} onChange={(e) => handleNewChange("observedTemp", e.target.value)} placeholder="e.g. 12.5" />
+                <Input
+                  value={newIncident.observedTemp}
+                  onChange={(e) => handleNewChange("observedTemp", e.target.value)}
+                  placeholder="e.g. 12.5"
+                />
               </div>
 
               <div>
                 <label className="text-xs text-slate-300">Summary</label>
-                <Input value={newIncident.summary} onChange={(e) => handleNewChange("summary", e.target.value)} placeholder="Short title" />
+                <Input
+                  value={newIncident.summary}
+                  onChange={(e) => handleNewChange("summary", e.target.value)}
+                  placeholder="Short title"
+                />
               </div>
 
               <div>
@@ -1762,7 +1280,11 @@ function TemperatureIncidentsTab() {
 
               <div>
                 <label className="text-xs text-slate-300">Opened by</label>
-                <Input value={newIncident.openedBy} onChange={(e) => handleNewChange("openedBy", e.target.value)} placeholder="e.g. J. Smith" />
+                <Input
+                  value={newIncident.openedBy}
+                  onChange={(e) => handleNewChange("openedBy", e.target.value)}
+                  placeholder="e.g. J. Smith"
+                />
               </div>
             </div>
 
@@ -1778,7 +1300,10 @@ function TemperatureIncidentsTab() {
                 Cancel
               </Button>
 
-              <Button className="rounded-full bg-rose-400 text-slate-950 hover:bg-rose-300 text-xs" onClick={createIncident}>
+              <Button
+                className="rounded-full bg-rose-400 text-slate-950 hover:bg-rose-300 text-xs"
+                onClick={createIncident}
+              >
                 Create
               </Button>
             </div>
@@ -1846,7 +1371,10 @@ function TemperatureIncidentsTab() {
                 Cancel
               </Button>
 
-              <Button className="rounded-full bg-emerald-400 text-slate-950 hover:bg-emerald-300 text-xs" onClick={submitResolve}>
+              <Button
+                className="rounded-full bg-emerald-400 text-slate-950 hover:bg-emerald-300 text-xs"
+                onClick={submitResolve}
+              >
                 Resolve
               </Button>
             </div>
@@ -1856,3 +1384,4 @@ function TemperatureIncidentsTab() {
     </div>
   );
 }
+
