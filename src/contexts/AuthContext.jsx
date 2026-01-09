@@ -1,64 +1,94 @@
+// src/contexts/AuthContext.jsx
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged, signOut as fbSignOut } from "firebase/auth";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
-// We store:
-// - firebaseUser: Firebase Auth user (or null)
-// - profile: Firestore user doc (or null)
-// - role: derived from profile.role
-// - loading: while we figure out who you are + your role
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [firebaseUser, setFirebaseUser] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [user, setUser] = useState(null); // firebase auth user
+  const [profile, setProfile] = useState(null); // firestore /users/{uid}
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+    let unsubscribeProfile = null;
 
-      if (!user) {
-        setProfile(null);
+    const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      setError("");
+
+      // Reset profile state when auth changes
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+      setProfile(null);
+
+      if (!u) {
+        setProfileLoading(false);
         setLoading(false);
         return;
       }
 
-      try {
-        // User profiles live in: users/{uid}
-        const ref = doc(db, "users", user.uid);
-        const snap = await getDoc(ref);
+      setProfileLoading(true);
 
-        if (snap.exists()) {
-          setProfile({ id: snap.id, ...snap.data() });
-        } else {
-          // No profile yet: leave null (rules will enforce safe defaults on creation elsewhere)
+      // Live subscribe to profile doc so UI updates immediately after role changes
+      const ref = doc(db, "users", u.uid);
+
+      unsubscribeProfile = onSnapshot(
+        ref,
+        (snap) => {
+          if (!snap.exists()) {
+            setProfile(null);
+            setError(
+              "Your user profile is missing in Firestore (/users/{uid}). Ask an admin to create it."
+            );
+          } else {
+            setProfile({ id: snap.id, ...snap.data() });
+          }
+          setProfileLoading(false);
+          setLoading(false);
+        },
+        (err) => {
           setProfile(null);
+          setProfileLoading(false);
+          setLoading(false);
+          setError(err?.message || String(err));
         }
-      } catch (e) {
-        console.error("AuthContext: failed to load user profile", e);
-        setProfile(null);
-      } finally {
-        setLoading(false);
-      }
+      );
     });
 
-    return () => unsub();
+    return () => {
+      if (unsubscribeProfile) unsubscribeProfile();
+      unsubscribeAuth();
+    };
   }, []);
 
-  const role = profile?.role || "User";
+  const role = profile?.role || null;
+  const displayName =
+    profile?.displayName ||
+    user?.displayName ||
+    profile?.email ||
+    user?.email ||
+    "";
+
   const isAdmin = role === "System Admin";
 
   const value = useMemo(
     () => ({
-      firebaseUser,
+      user,
       profile,
       role,
+      displayName,
       isAdmin,
-      loading,
+      loading: loading || profileLoading,
+      error,
+      signOut: () => fbSignOut(auth),
     }),
-    [firebaseUser, profile, role, isAdmin, loading]
+    [user, profile, role, displayName, isAdmin, loading, profileLoading, error]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -66,6 +96,7 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 }
+

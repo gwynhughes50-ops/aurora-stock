@@ -1,28 +1,35 @@
-import React from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+// src/layout/Layout.jsx
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
+import useNotifications from "@/hooks/useNotifications";
+
 import {
+  LayoutDashboard,
+  Boxes,
+  AlertTriangle,
+  Thermometer,
+  ClipboardCheck,
+  FileText,
+  BarChart3,
   Package,
   Bell,
-  Boxes,
-  Thermometer,
-  FileText,
-  LayoutDashboard,
-  AlertTriangle,
-  BarChart3,
   LogIn,
-  UserPlus,
   LogOut,
-  ClipboardCheck,
+  UserPlus,
 } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { useAuth } from "../contexts/AuthContext";
-import { signOut } from "firebase/auth";
-import { auth } from "../lib/firebase";
 
 export default function Layout() {
   const navigate = useNavigate();
-  const { firebaseUser, isAdmin } = useAuth();
+
+  // ✅ From AuthContext
+  const { user, displayName, role, isAdmin, loading } = useAuth();
+
+  // ✅ Unread count (safe if not signed in)
+  const { unreadCount } = useNotifications(user?.uid);
 
   const navItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,7 +40,7 @@ export default function Layout() {
     ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: FileText }] : []),
     { to: "/reports", label: "Reports", icon: BarChart3 },
   ];
- 
+
   async function handleSignOut() {
     try {
       await signOut(auth);
@@ -42,6 +49,8 @@ export default function Layout() {
       console.error("Sign out failed:", e);
     }
   }
+
+  const signedInLabel = displayName || user?.email || "Signed in";
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -61,22 +70,30 @@ export default function Layout() {
               <Package className="h-5 w-5 text-slate-950" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-                Aurora Stock Control
-              </h1>
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">MedTrak+</h1>
               <p className="text-xs text-slate-400 sm:text-sm">
-                Inventory, alerts and temperatures across your sites.
+                Inventory, alerts, temperatures and more across your sites.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" className="gap-2 rounded-full px-3 py-1.5">
-              <Bell className="h-4 w-4" />
-              Notifications
-            </Button>
+            {/* ✅ Notifications button now routes */}
+            <NavLink to="/notifications">
+              <Button variant="ghost" className="gap-2 rounded-full px-3 py-1.5 relative">
+                <Bell className="h-4 w-4" />
+                Notifications
 
-            {!firebaseUser ? (
+                {!!unreadCount && unreadCount > 0 && (
+                  <span className="ml-1 rounded-full bg-teal-500/20 px-2 py-0.5 text-[11px] text-teal-200">
+                    {unreadCount}
+                  </span>
+                )}
+              </Button>
+            </NavLink>
+
+            {/* ✅ While auth is loading, don’t flicker */}
+            {loading ? null : !user ? (
               <>
                 <NavLink to="/login">
                   <Button variant="ghost" className="gap-2 rounded-full px-3 py-1.5">
@@ -99,19 +116,21 @@ export default function Layout() {
               <>
                 <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/40 px-3 py-1.5 text-xs text-slate-200">
                   <span className="text-slate-400">Signed in:</span>
-                  <span className="font-medium">{firebaseUser.email}</span>
-                  {isAdmin && (
-                    <span className="ml-1 rounded-full bg-teal-500/15 px-2 py-0.5 text-teal-200">
-                      Admin
+                  <span className="font-medium">{signedInLabel}</span>
+
+                  {role && (
+                    <span
+                      className={`ml-1 rounded-full px-2 py-0.5 ${
+                        isAdmin ? "bg-teal-500/15 text-teal-200" : "bg-slate-800/60 text-slate-200"
+                      }`}
+                      title={role}
+                    >
+                      {isAdmin ? "System Admin" : role}
                     </span>
                   )}
                 </div>
 
-                <Button
-                  variant="ghost"
-                  className="gap-2 rounded-full px-3 py-1.5"
-                  onClick={handleSignOut}
-                >
+                <Button variant="ghost" className="gap-2 rounded-full px-3 py-1.5" onClick={handleSignOut}>
                   <LogOut className="h-4 w-4" />
                   Sign out
                 </Button>

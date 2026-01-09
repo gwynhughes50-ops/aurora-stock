@@ -14,7 +14,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -33,7 +43,6 @@ import {
   Plus,
   Boxes,
   Package,
-  Calendar,
   UserPlus,
   MoreVertical,
   Pin,
@@ -85,6 +94,13 @@ const defaultRoles = [
     permissions: ["*"],
     protected: true,
   },
+];
+
+// ✅ Human-friendly permission labels (values stay the same)
+const PERMISSIONS = [
+  { id: "stock:read", label: "View stock" },
+  { id: "stock:write", label: "Edit stock" },
+  { id: "admin:read", label: "Access admin tools" },
 ];
 
 function slugifyRole(name) {
@@ -194,8 +210,7 @@ function prettyPermissions(perms = []) {
 }
 
 export default function AdminDashboard() {
-  // NOTE: This is currently hard-coded admin in your scaffold.
-  // When you wire auth, replace these lines with your auth context.
+  // NOTE: Scaffold admin
   const isAdmin = true;
   const authLoading = false;
 
@@ -261,6 +276,16 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState(seed.users);
   const [activeSiteId, setActiveSiteId] = useState(seed.sites[0]?.id || "main");
 
+  // ✅ NEW: keep activeSiteId valid when sites change (this is what makes delete reliable)
+  useEffect(() => {
+    if (!sites || sites.length === 0) {
+      if (activeSiteId !== "") setActiveSiteId("");
+      return;
+    }
+    const exists = sites.some((s) => s.id === activeSiteId);
+    if (!exists) setActiveSiteId(sites[0].id);
+  }, [sites, activeSiteId]);
+
   // Notifications scaffold state
   const [pushEnabled, setPushEnabled] = useState(false);
   const [emailEnabled, setEmailEnabled] = useState(true);
@@ -307,9 +332,17 @@ export default function AdminDashboard() {
   const [isAddSiteOpen, setIsAddSiteOpen] = useState(false);
   const [newSite, setNewSite] = useState({ name: "", address: "", phone: "" });
 
+  // ✅ Edit Site modal
+  const [isEditSiteOpen, setIsEditSiteOpen] = useState(false);
+  const [editSite, setEditSite] = useState({ id: "", name: "", address: "", phone: "" });
+
   // Add Location modal
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [newLocation, setNewLocation] = useState({ name: "", type: "Room" });
+
+  // ✅ Edit Location modal
+  const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
+  const [editLocation, setEditLocation] = useState({ id: "", name: "", type: "Room" });
 
   // Danger zone state
   const [deleteChecks, setDeleteChecks] = useState(() => new Set());
@@ -343,12 +376,42 @@ export default function AdminDashboard() {
     setIsAddSiteOpen(false);
   };
 
+  const openEditSite = () => {
+    if (!activeSite) return;
+    setEditSite({
+      id: activeSite.id,
+      name: activeSite.name || "",
+      address: activeSite.address || "",
+      phone: activeSite.phone || "",
+    });
+    setIsEditSiteOpen(true);
+  };
+
+  const saveEditSite = () => {
+    const name = editSite.name.trim();
+    if (!editSite.id || !name) return;
+
+    setSites((prev) =>
+      prev.map((s) =>
+        s.id === editSite.id
+          ? {
+              ...s,
+              name,
+              address: (editSite.address || "").trim(),
+              phone: (editSite.phone || "").trim(),
+            }
+          : s
+      )
+    );
+
+    setIsEditSiteOpen(false);
+    setEditSite({ id: "", name: "", address: "", phone: "" });
+  };
+
+  // ✅ FIXED: deleteSite is now simple + reliable (activeSiteId is handled by the effect)
   const deleteSite = (siteId) => {
+    if (!siteId) return;
     setSites((prev) => prev.filter((s) => s.id !== siteId));
-    if (activeSiteId === siteId) {
-      const remaining = sites.filter((s) => s.id !== siteId);
-      setActiveSiteId(remaining[0]?.id || "");
-    }
   };
 
   const addLocation = () => {
@@ -370,12 +433,37 @@ export default function AdminDashboard() {
     setIsAddLocationOpen(false);
   };
 
-  const deleteLocation = (locId) => {
+  const openEditLocation = (loc) => {
+    if (!loc?.id) return;
+    setEditLocation({ id: loc.id, name: loc.name || "", type: loc.type || "Room" });
+    setIsEditLocationOpen(true);
+  };
+
+  const saveEditLocation = () => {
+    const name = editLocation.name.trim();
+    if (!name || !editLocation.id) return;
+
     setSites((prev) =>
       prev.map((s) =>
         s.id === activeSiteId
-          ? { ...s, locations: s.locations.filter((l) => l.id !== locId) }
+          ? {
+              ...s,
+              locations: (s.locations || []).map((l) =>
+                l.id === editLocation.id ? { ...l, name, type: editLocation.type } : l
+              ),
+            }
           : s
+      )
+    );
+
+    setIsEditLocationOpen(false);
+    setEditLocation({ id: "", name: "", type: "Room" });
+  };
+
+  const deleteLocation = (locId) => {
+    setSites((prev) =>
+      prev.map((s) =>
+        s.id === activeSiteId ? { ...s, locations: s.locations.filter((l) => l.id !== locId) } : s
       )
     );
   };
@@ -392,9 +480,7 @@ export default function AdminDashboard() {
     const picked = roles.find((r) => r.id === assignRoleId);
     const roleNameToStore = picked?.name || "No Role";
 
-    setUsers((prev) =>
-      prev.map((u) => (u.id === assignUserId ? { ...u, role: roleNameToStore } : u))
-    );
+    setUsers((prev) => prev.map((u) => (u.id === assignUserId ? { ...u, role: roleNameToStore } : u)));
 
     setIsAssignOpen(false);
     setAssignUserId(null);
@@ -610,6 +696,15 @@ export default function AdminDashboard() {
                         {activeSite?.locations?.length || 0} locations
                       </Badge>
 
+                      <Button
+                        variant="outline"
+                        className="rounded-full border-slate-700/70 bg-slate-900/40 text-slate-200 hover:bg-slate-900/60"
+                        onClick={openEditSite}
+                        disabled={!activeSite}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" /> Edit Site
+                      </Button>
+
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button
@@ -624,7 +719,14 @@ export default function AdminDashboard() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete this site?</AlertDialogTitle>
                             <AlertDialogDescription className="text-slate-300">
-                              This removes the site from the admin scaffold. (Later, we can wire this into Firestore.)
+                              Are you sure you want to delete{" "}
+                              <span className="text-slate-100 font-medium">
+                                {activeSite?.name || "this site"}
+                              </span>
+                              ? This will remove the site and all its locations from the admin scaffold.
+                              <br />
+                              <br />
+                              <span className="text-rose-200">This cannot be undone.</span>
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -649,9 +751,7 @@ export default function AdminDashboard() {
                     <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 overflow-hidden">
                       <div className="px-4 py-3 flex items-center justify-between">
                         <div className="font-semibold text-slate-50">Locations</div>
-                        <div className="text-xs text-slate-400">
-                          Site = building • Location = room/cupboard
-                        </div>
+                        <div className="text-xs text-slate-400">Site = building • Location = room/cupboard</div>
                       </div>
 
                       <Table>
@@ -677,15 +777,15 @@ export default function AdminDashboard() {
                                 <TableCell className="text-right">
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                      <Button variant="outline" className="rounded-full border-slate-700/70 bg-slate-900/40 text-slate-200 hover:bg-slate-900/60">
+                                      <Button
+                                        variant="outline"
+                                        className="rounded-full border-slate-700/70 bg-slate-900/40 text-slate-200 hover:bg-slate-900/60"
+                                      >
                                         <MoreVertical className="h-4 w-4" />
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent className="border border-slate-700/60 bg-slate-950 text-slate-100">
-                                      <DropdownMenuItem
-                                        className="cursor-pointer"
-                                        onClick={() => alert("Edit UI coming next (we can add inline editing).")}
-                                      >
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => openEditLocation(loc)}>
                                         <Pencil className="h-4 w-4 mr-2" /> Edit
                                       </DropdownMenuItem>
                                       <DropdownMenuItem
@@ -797,7 +897,8 @@ export default function AdminDashboard() {
                       Activity Log
                     </CardTitle>
                     <CardDescription className="text-slate-300/80">
-                      Live feed from Firestore collection <span className="text-slate-200 font-medium">stock_movements</span>.
+                      Live feed from Firestore collection{" "}
+                      <span className="text-slate-200 font-medium">stock_movements</span>.
                     </CardDescription>
                   </CardHeader>
 
@@ -835,9 +936,7 @@ export default function AdminDashboard() {
                             <TableBody>
                               {activityRows.map((m) => (
                                 <TableRow key={m.id} className="border-slate-800/70">
-                                  <TableCell className="text-slate-300 whitespace-nowrap">
-                                    {fmtTs(m.created_at)}
-                                  </TableCell>
+                                  <TableCell className="text-slate-300 whitespace-nowrap">{fmtTs(m.created_at)}</TableCell>
                                   <TableCell className="text-slate-100">
                                     <div className="font-semibold">{activityLabel(m)}</div>
                                     <div className="text-xs text-slate-400 mt-0.5">
@@ -845,9 +944,7 @@ export default function AdminDashboard() {
                                       {m.location ? ` • Location: ${m.location}` : ""}
                                     </div>
                                   </TableCell>
-                                  <TableCell className="text-slate-200">
-                                    {m.item_name || m.item_id || "—"}
-                                  </TableCell>
+                                  <TableCell className="text-slate-200">{m.item_name || m.item_id || "—"}</TableCell>
                                   <TableCell className="text-slate-300">{m.notes || "—"}</TableCell>
                                 </TableRow>
                               ))}
@@ -984,9 +1081,7 @@ export default function AdminDashboard() {
                   <CardContent className="space-y-4">
                     <div className="rounded-xl border border-rose-400/20 bg-slate-950/30 p-4">
                       <div className="text-sm font-semibold text-slate-50">Bulk delete (example list)</div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        Select items then confirm delete.
-                      </div>
+                      <div className="text-xs text-slate-400 mt-1">Select items then confirm delete.</div>
 
                       <div className="mt-4 space-y-2">
                         {seed.deleteItems.map((it) => (
@@ -1062,7 +1157,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* =========================
-          MODALS (Add Site / Add Location / Assign Role / Add Role)
+          MODALS
          ========================= */}
 
       {/* Add Site Modal */}
@@ -1121,13 +1216,70 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ✅ Edit Site Modal */}
+      {isEditSiteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800/70 bg-slate-900/95 p-5 shadow-2xl text-slate-100">
+            <div className="text-lg font-semibold text-slate-50">Edit Site</div>
+            <div className="text-xs text-slate-400 mt-1">Update site name, address and phone.</div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs text-slate-300">Site name</label>
+                <Input
+                  value={editSite.name}
+                  onChange={(e) => setEditSite((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. Main Surgery"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300">Address</label>
+                <Input
+                  value={editSite.address}
+                  onChange={(e) => setEditSite((p) => ({ ...p, address: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-300">Phone</label>
+                <Input
+                  value={editSite.phone}
+                  onChange={(e) => setEditSite((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                className="rounded-full border-slate-700/70 bg-slate-900/40 text-slate-200 hover:bg-slate-900/60"
+                onClick={() => {
+                  setIsEditSiteOpen(false);
+                  setEditSite({ id: "", name: "", address: "", phone: "" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
+                onClick={saveEditSite}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Location Modal */}
       {isAddLocationOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur">
           <div className="w-full max-w-md rounded-2xl border border-slate-800/70 bg-slate-900/95 p-5 shadow-2xl text-slate-100">
             <div className="text-lg font-semibold text-slate-50">Add Location</div>
             <div className="text-xs text-slate-400 mt-1">
-              Add a room/cupboard for: <span className="text-slate-200 font-medium">{activeSite?.name || "Site"}</span>
+              Add a room/cupboard for:{" "}
+              <span className="text-slate-200 font-medium">{activeSite?.name || "Site"}</span>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -1171,6 +1323,62 @@ export default function AdminDashboard() {
               <Button
                 className="rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
                 onClick={addLocation}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Edit Location Modal */}
+      {isEditLocationOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur">
+          <div className="w-full max-w-md rounded-2xl border border-slate-800/70 bg-slate-900/95 p-5 shadow-2xl text-slate-100">
+            <div className="text-lg font-semibold text-slate-50">Edit Location</div>
+            <div className="text-xs text-slate-400 mt-1">Update location name and type.</div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs text-slate-300">Location name</label>
+                <Input
+                  value={editLocation.name}
+                  onChange={(e) => setEditLocation((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. Treatment Room 1"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300">Type</label>
+                <select
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                  value={editLocation.type}
+                  onChange={(e) => setEditLocation((p) => ({ ...p, type: e.target.value }))}
+                >
+                  <option value="Room">Room</option>
+                  <option value="Storage">Storage</option>
+                  <option value="Fridge">Fridge</option>
+                  <option value="Freezer">Freezer</option>
+                  <option value="Area">Area</option>
+                  <option value="Cupboard">Cupboard</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                className="rounded-full border-slate-700/70 bg-slate-900/40 text-slate-200 hover:bg-slate-900/60"
+                onClick={() => {
+                  setIsEditLocationOpen(false);
+                  setEditLocation({ id: "", name: "", type: "Room" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
+                onClick={saveEditLocation}
               >
                 Save
               </Button>
@@ -1254,25 +1462,23 @@ export default function AdminDashboard() {
               <div>
                 <label className="text-xs text-slate-300">Permissions</label>
                 <div className="mt-2 space-y-2 text-sm">
-                  {["stock:read", "stock:write", "admin:read"].map((perm) => (
-                    <label key={perm} className="flex items-center gap-2 text-slate-200">
+                  {PERMISSIONS.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 text-slate-200">
                       <Checkbox
-                        checked={newRole.permissions.includes(perm)}
+                        checked={newRole.permissions.includes(p.id)}
                         onCheckedChange={(v) => {
-                          setNewRole((p) => {
-                            const next = new Set(p.permissions);
-                            if (v) next.add(perm);
-                            else next.delete(perm);
-                            return { ...p, permissions: Array.from(next) };
+                          setNewRole((prev) => {
+                            const next = new Set(prev.permissions);
+                            if (v) next.add(p.id);
+                            else next.delete(p.id);
+                            return { ...prev, permissions: Array.from(next) };
                           });
                         }}
                       />
-                      {perm}
+                      <span className="text-slate-100">{p.label}</span>
+                      <span className="text-[11px] text-slate-400 ml-1">({p.id})</span>
                     </label>
                   ))}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-2">
-                  Note: “admin:read” is just a label in this scaffold. Real enforcement comes from Firestore rules.
                 </div>
               </div>
             </div>
@@ -1301,3 +1507,5 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+

@@ -1,18 +1,14 @@
+// src/pages/Register.jsx
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  createUserWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 
 import { auth, db } from "../lib/firebase";
+
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -20,8 +16,12 @@ export default function Register() {
   const inviteId = params.get("invite");
 
   const [loading, setLoading] = useState(true);
+
   const [invite, setInvite] = useState(null);
-  const [error, setError] = useState("");
+
+  // ✅ Split errors
+  const [inviteError, setInviteError] = useState("");
+  const [formError, setFormError] = useState("");
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -34,9 +34,12 @@ export default function Register() {
     let active = true;
 
     async function loadInvite() {
+      setInviteError("");
+      setFormError("");
+
       try {
         if (!inviteId) {
-          throw new Error("Invalid or missing invite link.");
+          throw new Error("Invalid or missing invite link. Please use the invite URL your admin sent you.");
         }
 
         const ref = doc(db, "invites", inviteId);
@@ -56,7 +59,7 @@ export default function Register() {
           throw new Error("This invite has expired.");
         }
 
-        // Hard-lock roles
+        // Hard-lock roles (client-side)
         const role = data.role === "ReadOnly" ? "ReadOnly" : "User";
 
         if (active) {
@@ -68,7 +71,7 @@ export default function Register() {
           });
         }
       } catch (e) {
-        if (active) setError(e.message);
+        if (active) setInviteError(e?.message || "Failed to load invite.");
       } finally {
         if (active) setLoading(false);
       }
@@ -83,20 +86,13 @@ export default function Register() {
   // -----------------------------
   // Create account
   // -----------------------------
-  async function handleRegister() {
-    setError("");
+  async function handleRegister(e) {
+    e?.preventDefault?.();
+    setFormError("");
 
-    if (!invite?.email) {
-      return setError("Invite email missing.");
-    }
-
-    if (password.length < 10) {
-      return setError("Password must be at least 10 characters.");
-    }
-
-    if (password !== confirm) {
-      return setError("Passwords do not match.");
-    }
+    if (!invite?.email) return setFormError("Invite email missing.");
+    if (password.length < 10) return setFormError("Password must be at least 10 characters.");
+    if (password !== confirm) return setFormError("Passwords do not match.");
 
     setSaving(true);
 
@@ -106,12 +102,8 @@ export default function Register() {
         await signOut(auth);
       }
 
-      // 1) Create Auth user
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        invite.email,
-        password
-      );
+      // 1) Create Auth user (this signs the user in)
+      const cred = await createUserWithEmailAndPassword(auth, invite.email, password);
 
       // 2) Create Firestore profile
       await setDoc(doc(db, "users", cred.user.uid), {
@@ -130,7 +122,8 @@ export default function Register() {
 
       navigate("/dashboard", { replace: true });
     } catch (e) {
-      setError(e.message);
+      console.error("Register error:", e);
+      setFormError(e?.message || "Registration failed.");
     } finally {
       setSaving(false);
     }
@@ -140,51 +133,93 @@ export default function Register() {
   // UI
   // -----------------------------
   if (loading) {
-    return (
-      <div style={{ padding: 32, color: "white" }}>
-        Loading invite…
-      </div>
-    );
+    return <div className="p-8 text-slate-100">Loading invite…</div>;
   }
 
-  if (error) {
+  if (inviteError) {
     return (
-      <div style={{ padding: 32, color: "white" }}>
-        <p style={{ color: "salmon" }}>{error}</p>
-        <button onClick={() => navigate("/login")}>
-          Back to login
-        </button>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6">
+        <Card className="w-full max-w-lg rounded-2xl border border-slate-800/70 bg-slate-900/60 text-slate-100 backdrop-blur">
+          <CardHeader>
+            <CardTitle>Invite problem</CardTitle>
+            <CardDescription className="text-slate-300/80">{inviteError}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => navigate("/login")}>
+              Back to login
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 32, color: "white", maxWidth: 420 }}>
-      <h2>Create account</h2>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6">
+      <Card className="w-full max-w-lg rounded-2xl border border-slate-800/70 bg-slate-900/60 text-slate-100 backdrop-blur">
+        <CardHeader>
+          <CardTitle>Create account</CardTitle>
+          <CardDescription className="text-slate-300/80">
+            You’re creating an account using an invite.
+          </CardDescription>
+        </CardHeader>
 
-      <p><strong>Email:</strong> {invite.email}</p>
-      <p><strong>Role:</strong> {invite.role}</p>
+        <CardContent>
+          <div className="text-sm text-slate-300 space-y-1 mb-4">
+            <div>
+              <span className="text-slate-400">Email:</span>{" "}
+              <span className="text-slate-100 font-medium">{invite.email}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Role:</span>{" "}
+              <span className="text-slate-100 font-medium">{invite.role}</span>
+            </div>
+          </div>
 
-      <div style={{ marginTop: 16 }}>
-        <input
-          type="password"
-          placeholder="Password (min 10 characters)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", marginBottom: 8 }}
-        />
-        <input
-          type="password"
-          placeholder="Confirm password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          style={{ width: "100%", marginBottom: 12 }}
-        />
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Password</div>
+              <Input
+                type="password"
+                placeholder="Password (min 10 characters)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
 
-        <button onClick={handleRegister} disabled={saving}>
-          {saving ? "Creating…" : "Create account"}
-        </button>
-      </div>
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Confirm password</div>
+              <Input
+                type="password"
+                placeholder="Confirm password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+
+            {formError && (
+              <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+                {formError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => navigate("/login")}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={saving}
+                className="rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
+              >
+                {saving ? "Creating…" : "Create account"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

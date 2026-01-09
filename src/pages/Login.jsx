@@ -1,82 +1,98 @@
+// src/pages/Login.jsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth } from "../lib/firebase";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, LogIn } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 export default function Login() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function onLogin() {
+  async function handleSubmit(e) {
+    e.preventDefault();
     setError("");
-    const em = email.trim().toLowerCase();
-    if (!em) return setError("Enter your email.");
-    if (!password) return setError("Enter your password.");
+
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail) return setError("Please enter your email.");
+    if (!password) return setError("Please enter your password.");
 
     setSaving(true);
     try {
-      await signInWithEmailAndPassword(auth, em, password);
-      nav("/dashboard", { replace: true });
-    } catch (e) {
-      setError(String(e?.message || e));
+      await signInWithEmailAndPassword(auth, cleanEmail, password);
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      // This makes sure you see what’s actually happening
+      setError(err?.message || "Sign in failed.");
+      console.error("Login error:", err);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6">
       <Card className="w-full max-w-md rounded-2xl border border-slate-800/70 bg-slate-900/60 text-slate-100 backdrop-blur">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <LogIn className="h-5 w-5 text-teal-300" />
-            Sign in
-          </CardTitle>
+          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <CardDescription className="text-slate-300/80">
+            Use your email and password.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-sm text-rose-200 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 mt-0.5" />
-              <div>{error}</div>
+
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Email</div>
+              <Input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@nhs.uk"
+                autoComplete="email"
+              />
             </div>
-          )}
 
-          <div>
-            <label className="text-xs text-slate-300">Email</label>
-            <Input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@nhs.uk"
-              className="mt-1 bg-slate-950/40 border-slate-800/70 text-slate-100 placeholder:text-slate-500"
-            />
-          </div>
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Password</div>
+              <Input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                placeholder="••••••••••"
+                autoComplete="current-password"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs text-slate-300">Password</label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••"
-              className="mt-1 bg-slate-950/40 border-slate-800/70 text-slate-100 placeholder:text-slate-500"
-            />
-          </div>
+            {error && (
+              <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+                {error}
+              </div>
+            )}
 
-          <Button
-            className="w-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
-            onClick={onLogin}
-            disabled={saving}
-          >
-            {saving ? "Signing in…" : "Sign in"}
-          </Button>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/30"
+            >
+              {saving ? "Signing in…" : "Sign in"}
+            </Button>
+
+            <div className="text-xs text-slate-400 text-center">
+              Need an invite?{" "}
+              <Link className="text-teal-300 hover:underline" to="/register">
+                Register
+              </Link>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>
