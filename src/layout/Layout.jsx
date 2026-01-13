@@ -20,6 +20,7 @@ import {
   LogIn,
   LogOut,
   UserPlus,
+  LifeBuoy,
 } from "lucide-react";
 
 export default function Layout() {
@@ -31,16 +32,20 @@ export default function Layout() {
   // ✅ Unread count (safe if not signed in)
   const { unreadCount } = useNotifications(user?.uid);
 
-  const navItems = [
+    const navItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/inventory", label: "Inventory", icon: Boxes },
     { to: "/alerts", label: "Alerts", icon: AlertTriangle },
     { to: "/temperature", label: "Temperature", icon: Thermometer },
     { to: "/compliance", label: "Compliance", icon: ClipboardCheck },
+  
+    // 🆘 Help (available to all users)
+    { to: "/help", label: "Help", icon: LifeBuoy },
+  
     ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: FileText }] : []),
     { to: "/reports", label: "Reports", icon: BarChart3 },
   ];
-
+ 
   async function handleSignOut() {
     try {
       await signOut(auth);
