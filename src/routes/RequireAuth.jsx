@@ -1,6 +1,8 @@
 // src/routes/RequireAuth.jsx
+import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import LoadingScreen from "@/components/ui/LoadingScreen";
 
 export default function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -8,15 +10,21 @@ export default function RequireAuth({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-300">
-        Checking session…
-      </div>
+      <LoadingScreen
+        title="Signing you in"
+        message="Checking your session and permissions…"
+        fullscreen
+      />
     );
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    // ✅ Preserve full path including query params
+    const fullPath = location.pathname + location.search;
+
+    return <Navigate to="/login" replace state={{ from: fullPath }} />;
   }
 
   return children;
 }
+

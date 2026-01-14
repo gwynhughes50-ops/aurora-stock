@@ -2,7 +2,7 @@
   "name": "aurora-stock",
   "version": "0.0.1",
   "private": true,
-   "scripts": {
+  "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -19,6 +19,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.7.0",
+    "firebase-admin": "^13.6.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.460.0",

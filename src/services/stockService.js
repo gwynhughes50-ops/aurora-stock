@@ -18,6 +18,8 @@ import { db } from "../lib/firebase";
 
 const ITEMS_COL = "stock_items";
 const MOVES_COL = "stock_movements";
+// ✅ Barcode index (one doc per barcode) to enforce uniqueness
+const BARCODE_COL = "stock_barcodes";
 
 function toNumber(v, fallback = 0) {
   const n = Number(v);
@@ -26,6 +28,11 @@ function toNumber(v, fallback = 0) {
 
 function cleanString(v) {
   return String(v ?? "").trim();
+}
+
+// Normalize barcode to a stable key for indexing
+function normalizeBarcode(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function normalizeItemPatch(patch = {}) {
@@ -88,122 +95,194 @@ export async function createStockItem(data) {
     created_at: serverTimestamp(),
   });
 
-  const ref = await addDoc(collection(db, ITEMS_COL), payload);
+  const barcodeKey = normalizeBarcode(payload.barcode);
 
-  // ✅ movement log: create (now includes item_name)
-  await addDoc(collection(db, MOVES_COL), {
-    item_id: ref.id,
-    item_name: payload.name || "",
-    type: "create",
-    delta: 0,
-    qty_before: null,
-    qty_after: payload.current_stock ?? 0,
-    reason: null,
-    notes: null,
-    actor: null,
-    created_at: serverTimestamp(),
+  const itemRef = doc(collection(db, ITEMS_COL));
+  const moveRef = doc(collection(db, MOVES_COL));
+
+  await runTransaction(db, async (tx) => {
+    if (barcodeKey) {
+      const barcodeRef = doc(db, BARCODE_COL, barcodeKey);
+      const barcodeSnap = await tx.get(barcodeRef);
+      if (barcodeSnap.exists()) {
+        throw new Error("Barcode already in use. Please check the item or use a different barcode.");
+      }
+      tx.set(barcodeRef, {
+        item_id: itemRef.id,
+        barcode: payload.barcode || "",
+        created_at: serverTimestamp(),
+      });
+    }
+
+    tx.set(itemRef, payload);
+
+    tx.set(moveRef, {
+      item_id: itemRef.id,
+      item_name: payload.name || "",
+      type: "create",
+      delta: 0,
+      qty_before: null,
+      qty_after: payload.current_stock ?? 0,
+      reason: null,
+      notes: null,
+      actor: null,
+      created_at: serverTimestamp(),
+    });
   });
 
-  return ref.id;
+  return itemRef.id;
 }
+
+
 
 export async function updateStockItem(id, patch) {
-  const ref = doc(db, ITEMS_COL, id);
+  const itemRef = doc(db, ITEMS_COL, id);
+  const moveRef = doc(collection(db, MOVES_COL));
 
-  // Read current name so the edit audit row always has it
-  let item_name = "";
-  try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) item_name = snap.data()?.name || "";
-  } catch {
-    // ignore
-  }
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(itemRef);
+    if (!snap.exists()) throw new Error("Item not found.");
 
-  await updateDoc(ref, normalizeItemPatch(patch));
+    const current = snap.data() || {};
+    const beforeName = current?.name || "";
+    const beforeBarcode = cleanString(current?.barcode);
 
-  // ✅ movement log: edit (now includes item_name)
-  await addDoc(collection(db, MOVES_COL), {
-    item_id: id,
-    item_name,
-    type: "edit",
-    delta: 0,
-    qty_before: null,
-    qty_after: null,
-    reason: null,
-    notes: null,
-    actor: null,
-    created_at: serverTimestamp(),
+    const normalizedPatch = normalizeItemPatch(patch);
+
+    const nextBarcode =
+      "barcode" in patch ? cleanString(patch?.barcode) : beforeBarcode;
+
+    const beforeKey = normalizeBarcode(beforeBarcode);
+    const nextKey = normalizeBarcode(nextBarcode);
+
+    if ("barcode" in patch && beforeKey !== nextKey) {
+      if (nextKey) {
+        const nextRef = doc(db, BARCODE_COL, nextKey);
+        const nextSnap = await tx.get(nextRef);
+        if (nextSnap.exists()) {
+          throw new Error("Barcode already in use. Please choose a different barcode.");
+        }
+        tx.set(nextRef, {
+          item_id: id,
+          barcode: nextBarcode || "",
+          updated_at: serverTimestamp(),
+        });
+      }
+
+      if (beforeKey) {
+        tx.delete(doc(db, BARCODE_COL, beforeKey));
+      }
+    }
+
+    tx.update(itemRef, normalizedPatch);
+
+    const afterName =
+      ("name" in normalizedPatch ? normalizedPatch.name : beforeName) || "";
+
+    tx.set(moveRef, {
+      item_id: id,
+      item_name: afterName,
+      type: "edit",
+      delta: 0,
+      qty_before: null,
+      qty_after: null,
+      reason: null,
+      notes: null,
+      actor: null,
+      created_at: serverTimestamp(),
+    });
   });
 }
+
+
 
 /**
  * ✅ Archive instead of delete
  */
 export async function archiveStockItem(id, actor = null) {
-  const ref = doc(db, ITEMS_COL, id);
+  const itemRef = doc(db, ITEMS_COL, id);
+  const moveRef = doc(collection(db, MOVES_COL));
 
-  // Read name for audit row
-  let item_name = "";
-  try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) item_name = snap.data()?.name || "";
-  } catch {
-    // ignore
-  }
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(itemRef);
+    if (!snap.exists()) throw new Error("Item not found.");
 
-  await updateDoc(ref, {
-    archived_at: serverTimestamp(),
-    archived_by: actor || null,
-    updated_at: serverTimestamp(),
-  });
+    const data = snap.data() || {};
+    const item_name = data?.name || "";
+    const barcodeKey = normalizeBarcode(data?.barcode);
 
-  // ✅ movement log: archive (now includes item_name)
-  await addDoc(collection(db, MOVES_COL), {
-    item_id: id,
-    item_name,
-    type: "archive",
-    delta: 0,
-    qty_before: null,
-    qty_after: null,
-    reason: null,
-    notes: null,
-    actor: actor || null,
-    created_at: serverTimestamp(),
+    // Release barcode so it can be reused
+    if (barcodeKey) {
+      tx.delete(doc(db, BARCODE_COL, barcodeKey));
+    }
+
+    tx.update(itemRef, {
+      archived_at: serverTimestamp(),
+      archived_by: actor || null,
+      updated_at: serverTimestamp(),
+    });
+
+    tx.set(moveRef, {
+      item_id: id,
+      item_name,
+      type: "archive",
+      delta: 0,
+      qty_before: null,
+      qty_after: null,
+      reason: null,
+      notes: null,
+      actor: actor || null,
+      created_at: serverTimestamp(),
+    });
   });
 }
+
+
 
 export async function restoreStockItem(id, actor = null) {
-  const ref = doc(db, ITEMS_COL, id);
+  const itemRef = doc(db, ITEMS_COL, id);
+  const moveRef = doc(collection(db, MOVES_COL));
 
-  // Read name for audit row
-  let item_name = "";
-  try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) item_name = snap.data()?.name || "";
-  } catch {
-    // ignore
-  }
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(itemRef);
+    if (!snap.exists()) throw new Error("Item not found.");
 
-  await updateDoc(ref, {
-    archived_at: null,
-    archived_by: null,
-    updated_at: serverTimestamp(),
-  });
+    const data = snap.data() || {};
+    const item_name = data?.name || "";
+    const barcode = cleanString(data?.barcode);
+    const barcodeKey = normalizeBarcode(barcode);
 
-  // ✅ movement log: unarchive (now includes item_name)
-  await addDoc(collection(db, MOVES_COL), {
-    item_id: id,
-    item_name,
-    type: "unarchive",
-    delta: 0,
-    qty_before: null,
-    qty_after: null,
-    reason: null,
-    notes: null,
-    actor: actor || null,
-    created_at: serverTimestamp(),
+    if (barcodeKey) {
+      const bRef = doc(db, BARCODE_COL, barcodeKey);
+      const bSnap = await tx.get(bRef);
+      if (bSnap.exists()) {
+        throw new Error("Cannot restore: this barcode is already in use by another item.");
+      }
+      tx.set(bRef, { item_id: id, barcode, updated_at: serverTimestamp() });
+    }
+
+    tx.update(itemRef, {
+      archived_at: null,
+      archived_by: null,
+      updated_at: serverTimestamp(),
+    });
+
+    tx.set(moveRef, {
+      item_id: id,
+      item_name,
+      type: "unarchive",
+      delta: 0,
+      qty_before: null,
+      qty_after: null,
+      reason: null,
+      notes: null,
+      actor: actor || null,
+      created_at: serverTimestamp(),
+    });
   });
 }
+
+
 
 /**
  * ✅ Stock movement transaction (receive/use/adjust)
@@ -352,24 +431,22 @@ export async function useStockQuick({ barcode, qty, actor = null }) {
  // Add near the bottom of src/services/stockService.js
 
 export async function useStockByBarcode({ barcode, qty, actor = null }) {
-  const code = String(barcode || "").trim();
+  const raw = String(barcode || "").trim();
   const n = Number(qty);
 
-  if (!code) throw new Error("Barcode missing.");
+  if (!raw) throw new Error("Barcode missing.");
   if (!Number.isFinite(n) || n <= 0) throw new Error("Quantity must be at least 1.");
 
-  const q = query(
-    collection(db, ITEMS_COL),
-    where("barcode", "==", code),
-    limit(1)
-  );
+  const key = normalizeBarcode(raw);
+  if (!key) throw new Error("Barcode missing.");
 
-  const snap = await getDocs(q);
-  if (snap.empty) throw new Error("Item not found for this barcode.");
+  const barcodeRef = doc(db, BARCODE_COL, key);
+  const barcodeSnap = await getDoc(barcodeRef);
+  if (!barcodeSnap.exists()) throw new Error("Item not found for this barcode.");
 
-  const itemId = snap.docs[0].id;
+  const itemId = barcodeSnap.data()?.item_id;
+  if (!itemId) throw new Error("Barcode index is missing item reference.");
 
-  // Reuse your existing transaction + audit trail
   await applyStockMovement(itemId, {
     type: "use",
     qty: n,
@@ -378,5 +455,7 @@ export async function useStockByBarcode({ barcode, qty, actor = null }) {
 
   return true;
 }
+
+
  
   

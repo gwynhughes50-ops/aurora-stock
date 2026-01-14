@@ -10,6 +10,10 @@ import StockMovementDialog from "@/components/stock/StockMovementDialog";
 import StockHistoryDialog from "@/components/stock/StockHistoryDialog";
 import ManualAddItemDialog from "@/components/stock/ManualAddItemDialog";
 
+// NOTE: your project uses components/Inventory (capital I)
+import EmergencyMonthlyChecklistTab from "@/components/Inventory/EmergencyMonthlyChecklistTab";
+import AnaphylaxisBoxesTab from "@/components/Inventory/AnaphylaxisBoxesTab";
+
 import useStock from "@/hooks/useStock";
 import { getRole, canArchive, canEdit, canMoveStock } from "@/auth/permissions";
 import { auth } from "@/lib/firebase";
@@ -28,15 +32,54 @@ import {
 const getStockBadge = (qty, min) => {
   const q = Number(qty ?? 0);
   const m = Number(min ?? 0);
-  return q <= m ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300";
+  return q <= m
+    ? "bg-rose-500/20 text-rose-300"
+    : "bg-emerald-500/20 text-emerald-300";
 };
+
+function TabButton({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "px-3 py-2 rounded-xl text-sm border transition",
+        active
+          ? "bg-teal-600/20 border-teal-500/60 text-teal-100"
+          : "bg-slate-900/30 border-slate-800 text-slate-200 hover:bg-slate-900/50",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function Inventory() {
   /* auth */
-  const user = auth.currentUser;
-  const role = getRole(user);
+  const user = auth.currentUser ?? null;
 
-  /* state */
+  // If user is temporarily null (auth still loading), use a safe stub to prevent crashes.
+  const actorUser =
+    user ??
+    ({
+      uid: null,
+      displayName: "Unknown",
+      email: null,
+      name: "Unknown",
+    });
+
+  // Permissions: guard getRole so we never crash if user is null or claims not ready.
+  let role = "staff";
+  try {
+    role = getRole(user) || "staff";
+  } catch (e) {
+    role = "staff";
+  }
+
+  /* tabs */
+  const [tab, setTab] = useState("stock"); // "stock" | "emergency" | "anaphylaxis"
+
+  /* stock state */
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -52,7 +95,7 @@ export default function Inventory() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
 
-  // NEW: edit modal state (so we don't depend on ManualAddItemDialog internals)
+  // edit modal state
   const [editOpen, setEditOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -84,7 +127,6 @@ export default function Inventory() {
     const q = search.trim().toLowerCase();
     if (!q) return items;
 
-    // Search by name, barcode, site, location, category
     return items.filter((it) => {
       const name = String(it?.name || "").toLowerCase();
       const barcode = String(it?.barcode || "").toLowerCase();
@@ -111,7 +153,7 @@ export default function Inventory() {
 
   const confirmDelete = async () => {
     if (!deleteItem) return;
-    await archiveItem(deleteItem.id, user);
+    await archiveItem(deleteItem.id, actorUser);
     setDeleteOpen(false);
     setDeleteItem(null);
   };
@@ -168,7 +210,7 @@ export default function Inventory() {
       }
 
       if (!site || site.toLowerCase() === "both sites") {
-        setEditError("Please enter a valid building name in Site (not “Both sites”).");
+        setEditError('Please enter a valid building name in Site (not "Both sites").');
         return;
       }
 
@@ -186,7 +228,7 @@ export default function Inventory() {
         min_stock: Number(editForm.min_stock) || 0,
       };
 
-      await updateItem(editItem.id, payload, { actor: user });
+      await updateItem(editItem.id, payload, { actor: actorUser });
 
       setEditOpen(false);
       setEditItem(null);
@@ -198,346 +240,362 @@ export default function Inventory() {
     }
   };
 
-  /* render */
   return (
     <div className="space-y-5">
-      {/* Sticky top bar */}
-      <div className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur p-3 rounded-2xl border border-slate-800/60">
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Search inventory… (name, barcode, site, room)"
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <Button variant="ghost" onClick={() => setShowArchived((v) => !v)}>
-            {showArchived ? "Hide archived" : "Show archived"}
-          </Button>
-
-          <Button onClick={() => setManualAddOpen(true)}>Add item</Button>
-
-          <MobileBarcodeScanner />
-        </div>
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2">
+        <TabButton active={tab === "stock"} onClick={() => setTab("stock")}>
+          Stock
+        </TabButton>
+        <TabButton active={tab === "emergency"} onClick={() => setTab("emergency")}>
+          Emergency Drugs & Equipment (Monthly)
+        </TabButton>
+        <TabButton active={tab === "anaphylaxis"} onClick={() => setTab("anaphylaxis")}>
+          Anaphylaxis Emergency Boxes
+        </TabButton>
       </div>
 
-      {loading && <p className="text-slate-400">Loading inventory…</p>}
-      {error && <p className="text-rose-400">{String(error)}</p>}
-
-      {/* Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((item) => {
-          const archived = Boolean(item.archived_at);
-
-          return (
-            <Card
-              key={item.id}
-              className={`p-4 rounded-2xl border ${
-                archived
-                  ? "bg-slate-900/40 text-slate-400"
-                  : "bg-slate-900/90 text-slate-100"
-              }`}
-            >
-              <div className="flex justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold truncate">{item.name}</p>
-
-                  {item.barcode && (
-                    <p className="text-xs text-slate-400 truncate">
-                      {item.barcode}
-                    </p>
-                  )}
-
-                  {/* location display (site + room/location) */}
-                  {(item.site || item.location) && (
-                    <p className="mt-1 text-xs text-slate-300 flex items-center gap-1 truncate">
-                      <Package className="h-3 w-3 opacity-70" />
-                      <span className="truncate">
-                        {item.site || "—"}
-                        {item.location ? ` · ${item.location}` : ""}
-                      </span>
-                    </p>
-                  )}
-
-                  {/* category + min stock */}
-                  {(item.category || item.min_stock !== undefined) && (
-                    <p className="mt-1 text-[11px] text-slate-400 truncate">
-                      {item.category ? `${item.category}` : ""}
-                      {item.category && item.min_stock !== undefined ? " · " : ""}
-                      {item.min_stock !== undefined ? `Min: ${item.min_stock}` : ""}
-                    </p>
-                  )}
-                </div>
-
-                <span
-                  className={`shrink-0 px-2 py-0.5 text-xs rounded-full ${getStockBadge(
-                    item.current_stock,
-                    item.min_stock
-                  )}`}
-                  title={`Current stock: ${item.current_stock}`}
-                >
-                  {item.current_stock}
-                </span>
-              </div>
-
-              {!archived && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => openUse(item)}
-                    disabled={!canMoveStock(role)}
-                  >
-                    − Use
-                  </Button>
-                  <Button
-                    onClick={() => openReceive(item)}
-                    disabled={!canMoveStock(role)}
-                  >
-                    + Receive
-                  </Button>
-                </div>
-              )}
-
-              <div className="mt-3 flex justify-between items-center">
-                <PhotoCapture
-                  buttonLabel="Photo"
-                  onCapture={(img) => updateItem(item.id, { photo_url: img }, { actor: user })}
+      {/* STOCK TAB */}
+      {tab === "stock" && (
+        <>
+          <div className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur p-3 rounded-2xl border border-slate-800/60">
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search inventory... (name, barcode, site, room)"
+                  className="pl-9"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                 />
+              </div>
 
-                <div className="flex gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => openHistory(item)}
-                    title="History"
-                  >
-                    <History className="h-4 w-4" />
-                  </Button>
+              <Button variant="ghost" onClick={() => setShowArchived((v) => !v)}>
+                {showArchived ? "Hide archived" : "Show archived"}
+              </Button>
 
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => openEdit(item)}
-                    disabled={!canEdit(role)}
-                    title="Edit"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+              <Button onClick={() => setManualAddOpen(true)}>Add item</Button>
 
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => openDelete(item)}
-                    disabled={!canArchive(role)}
-                    title="Archive (via confirm)"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+              <MobileBarcodeScanner />
+            </div>
+          </div>
 
-                  {!archived ? (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => archiveItem(item.id, user)}
-                      title="Archive"
+          {loading && <p className="text-slate-400">Loading inventory...</p>}
+          {error && <p className="text-rose-400">{String(error)}</p>}
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((item) => {
+              const archived = Boolean(item.archived_at);
+
+              return (
+                <Card
+                  key={item.id}
+                  className={`p-4 rounded-2xl border ${
+                    archived
+                      ? "bg-slate-900/40 text-slate-400"
+                      : "bg-slate-900/90 text-slate-100"
+                  }`}
+                >
+                  <div className="flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{item.name}</p>
+
+                      {item.barcode && (
+                        <p className="text-xs text-slate-400 truncate">
+                          {item.barcode}
+                        </p>
+                      )}
+
+                      {(item.site || item.location) && (
+                        <p className="mt-1 text-xs text-slate-300 flex items-center gap-1 truncate">
+                          <Package className="h-3 w-3 opacity-70" />
+                          <span className="truncate">
+                            {item.site || "-"}
+                            {item.location ? ` - ${item.location}` : ""}
+                          </span>
+                        </p>
+                      )}
+
+                      {(item.category || item.min_stock !== undefined) && (
+                        <p className="mt-1 text-[11px] text-slate-400 truncate">
+                          {item.category ? `${item.category}` : ""}
+                          {item.category && item.min_stock !== undefined ? " - " : ""}
+                          {item.min_stock !== undefined ? `Min: ${item.min_stock}` : ""}
+                        </p>
+                      )}
+                    </div>
+
+                    <span
+                      className={`shrink-0 px-2 py-0.5 text-xs rounded-full ${getStockBadge(
+                        item.current_stock,
+                        item.min_stock
+                      )}`}
+                      title={`Current stock: ${item.current_stock}`}
                     >
-                      <Archive className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => restoreItem(item.id, user)}
-                      title="Restore"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
+                      {item.current_stock}
+                    </span>
+                  </div>
+
+                  {!archived && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => openUse(item)}
+                        disabled={!canMoveStock(role)}
+                      >
+                        - Use
+                      </Button>
+                      <Button
+                        onClick={() => openReceive(item)}
+                        disabled={!canMoveStock(role)}
+                      >
+                        + Receive
+                      </Button>
+                    </div>
                   )}
-                </div>
-              </div>
 
-              {archived && (
-                <div className="mt-3 text-xs text-slate-500">Archived</div>
-              )}
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* dialogs */}
-      <StockMovementDialog
-        open={moveOpen}
-        onOpenChange={setMoveOpen}
-        item={activeItem}
-        mode={moveMode}
-        onConfirm={async ({ qty }) => {
-          if (!activeItem) return;
-          if (moveMode === "receive") {
-            await receiveStock(activeItem.id, qty, { actor: user });
-          } else {
-            await useStockQty(activeItem.id, qty, { actor: user });
-          }
-        }}
-      />
-
-      <StockHistoryDialog
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        item={historyItem}
-      />
-
-      <ManualAddItemDialog
-        open={manualAddOpen}
-        onOpenChange={setManualAddOpen}
-        onCreate={addItem}
-      />
-
-      {/* MODALS WRAPPER */}
-      <>
-        {/* Edit modal */}
-        {editOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-slate-900 p-4 rounded-2xl max-w-md w-full border border-slate-800">
-              <p className="font-semibold text-slate-100">Edit item</p>
-              <p className="text-sm text-slate-400 mt-1">
-                Update details so staff can find items quickly (e.g. “Main Branch · Room D90”).
-              </p>
-
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-xs text-slate-400 mb-1">Item name *</p>
-                  <Input
-                    value={editForm.name}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, name: e.target.value }))
-                    }
-                    placeholder="e.g. Syringe 10ml"
-                  />
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-400 mb-1">Barcode</p>
-                  <Input
-                    value={editForm.barcode}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, barcode: e.target.value }))
-                    }
-                    placeholder="Optional"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">Site (building) *</p>
-                    <Input
-                      value={editForm.site}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, site: e.target.value }))
+                  <div className="mt-3 flex justify-between items-center">
+                    <PhotoCapture
+                      buttonLabel="Photo"
+                      onCapture={(img) =>
+                        updateItem(item.id, { photo_url: img }, { actor: actorUser })
                       }
-                      placeholder="e.g. Main Branch"
                     />
+
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => openHistory(item)}
+                        title="History"
+                      >
+                        <History className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => openEdit(item)}
+                        disabled={!canEdit(role)}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => openDelete(item)}
+                        disabled={!canArchive(role)}
+                        title="Archive (via confirm)"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+
+                      {!archived ? (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => archiveItem(item.id, actorUser)}
+                          title="Archive"
+                        >
+                          <Archive className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => restoreItem(item.id, actorUser)}
+                          title="Restore"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">Room / Location *</p>
-                    <Input
-                      value={editForm.location}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, location: e.target.value }))
-                      }
-                      placeholder="e.g. Room D90"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">Category</p>
-                    <Input
-                      value={editForm.category}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, category: e.target.value }))
-                      }
-                      placeholder="e.g. Dressings"
-                    />
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">Min stock</p>
-                    <Input
-                      type="number"
-                      value={editForm.min_stock}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, min_stock: e.target.value }))
-                      }
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {editError && <p className="mt-3 text-sm text-rose-300">{editError}</p>}
-
-              <div className="mt-5 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEditOpen(false);
-                    setEditItem(null);
-                    setEditError("");
-                    setEditSaving(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  onClick={saveEdit}
-                  disabled={
-                    editSaving ||
-                    !editForm.name?.trim() ||
-                    !editForm.site?.trim() ||
-                    editForm.site?.trim().toLowerCase() === "both sites" ||
-                    !editForm.location?.trim()
-                  }
-                >
-                  {editSaving ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </div>
+                  {archived && (
+                    <div className="mt-3 text-xs text-slate-500">Archived</div>
+                  )}
+                </Card>
+              );
+            })}
           </div>
-        )}
 
-        {/* Delete confirm */}
-        {deleteOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="bg-slate-900 p-4 rounded-2xl max-w-sm w-full border border-slate-800">
-              <p className="font-semibold text-rose-300">Archive item?</p>
-              <p className="text-sm text-slate-400 mt-1">
-                You are about to archive <strong>{deleteItem?.name}</strong>.
-              </p>
+          <StockMovementDialog
+            open={moveOpen}
+            onOpenChange={setMoveOpen}
+            item={activeItem}
+            mode={moveMode}
+            onConfirm={async ({ qty }) => {
+              if (!activeItem) return;
+              if (moveMode === "receive") {
+                await receiveStock(activeItem.id, qty, { actor: actorUser });
+              } else {
+                await useStockQty(activeItem.id, qty, { actor: actorUser });
+              }
+            }}
+          />
 
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDeleteOpen(false);
-                    setDeleteItem(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button className="bg-rose-500" onClick={confirmDelete}>
-                  Yes, archive
-                </Button>
+          <StockHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} item={historyItem} />
+
+          <ManualAddItemDialog open={manualAddOpen} onOpenChange={setManualAddOpen} onCreate={addItem} />
+
+          <>
+            {editOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="bg-slate-900 p-4 rounded-2xl max-w-md w-full border border-slate-800">
+                  <p className="font-semibold text-slate-100">Edit item</p>
+
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Item name *</p>
+                      <Input
+                        value={editForm.name}
+                        onChange={(e) =>
+                          setEditForm((f) => ({ ...f, name: e.target.value }))
+                        }
+                        placeholder="e.g. Syringe 10ml"
+                      />
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Barcode</p>
+                      <Input
+                        value={editForm.barcode}
+                        onChange={(e) =>
+                          setEditForm((f) => ({ ...f, barcode: e.target.value }))
+                        }
+                        placeholder="Optional"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Site (building) *</p>
+                        <Input
+                          value={editForm.site}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, site: e.target.value }))
+                          }
+                          placeholder="e.g. main_branch"
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Room / Location *</p>
+                        <Input
+                          value={editForm.location}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, location: e.target.value }))
+                          }
+                          placeholder="e.g. Room D90"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Category</p>
+                        <Input
+                          value={editForm.category}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, category: e.target.value }))
+                          }
+                          placeholder="e.g. Dressings"
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Min stock</p>
+                        <Input
+                          type="number"
+                          value={editForm.min_stock}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, min_stock: e.target.value }))
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {editError && (
+                    <p className="mt-3 text-sm text-rose-300">{editError}</p>
+                  )}
+
+                  <div className="mt-5 flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditOpen(false);
+                        setEditItem(null);
+                        setEditError("");
+                        setEditSaving(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+
+                    <Button
+                      onClick={saveEdit}
+                      disabled={
+                        editSaving ||
+                        !editForm.name?.trim() ||
+                        !editForm.site?.trim() ||
+                        editForm.site?.trim().toLowerCase() === "both sites" ||
+                        !editForm.location?.trim()
+                      }
+                    >
+                      {editSaving ? "Saving..." : "Save changes"}
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
-      </>
+            )}
+
+            {deleteOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="bg-slate-900 p-4 rounded-2xl max-w-sm w-full border border-slate-800">
+                  <p className="font-semibold text-rose-300">Archive item?</p>
+                  <p className="text-sm text-slate-400 mt-1">
+                    You are about to archive <strong>{deleteItem?.name}</strong>.
+                  </p>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDeleteOpen(false);
+                        setDeleteItem(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button className="bg-rose-500" onClick={confirmDelete}>
+                      Yes, archive
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        </>
+      )}
+
+      {/* EMERGENCY TAB */}
+      {tab === "emergency" && (
+        <div className="bg-slate-950/50 border border-slate-800/60 rounded-2xl p-3 sm:p-4">
+          <EmergencyMonthlyChecklistTab />
+        </div>
+      )}
+
+      {/* ANAPHYLAXIS TAB */}
+      {tab === "anaphylaxis" && (
+        <div className="bg-slate-950/50 border border-slate-800/60 rounded-2xl p-3 sm:p-4">
+          <AnaphylaxisBoxesTab />
+        </div>
+      )}
     </div>
   );
 }

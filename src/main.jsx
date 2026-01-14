@@ -14,11 +14,13 @@ import AdminDashboard from "./pages/AdminDashboard";
 import Reports from "./pages/Reports";
 import Compliance from "./pages/Compliance";
 import Notifications from "./pages/Notifications";
+
 import Help from "./pages/Help";
+import LoadingPage from "./pages/LoadingPage";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import LoadingPage from "./pages/LoadingPage";
+import ForgotPassword from "./pages/ForgotPassword";
 
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import RequireAuth from "./routes/RequireAuth.jsx";
@@ -29,6 +31,7 @@ function AppRouter() {
       {/* ✅ PUBLIC */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
 
       {/* ✅ Optional: standalone loading page */}
       <Route path="/loading" element={<LoadingPage />} />
@@ -51,13 +54,11 @@ function AppRouter() {
         <Route path="admin/*" element={<AdminDashboard />} />
         <Route path="reports" element={<Reports />} />
         <Route path="help" element={<Help />} />
-
-        {/* ✅ Notifications page */}
         <Route path="notifications" element={<Notifications />} />
       </Route>
 
       {/* ✅ FALLBACK */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }

@@ -1,15 +1,25 @@
 // src/pages/Login.jsx
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../lib/firebase";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ If RequireAuth redirected here, it stores the original path in state.from
+  const redirectTo = location.state?.from || "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,9 +39,10 @@ export default function Login() {
     setSaving(true);
     try {
       await signInWithEmailAndPassword(auth, cleanEmail, password);
-      navigate("/dashboard", { replace: true });
+
+      // ✅ Go back to the page they originally requested
+      navigate(redirectTo, { replace: true });
     } catch (err) {
-      // This makes sure you see what’s actually happening
       setError(err?.message || "Sign in failed.");
       console.error("Login error:", err);
     } finally {
@@ -70,6 +81,15 @@ export default function Login() {
                 placeholder="••••••••••"
                 autoComplete="current-password"
               />
+
+              <div className="mt-2 flex justify-end">
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             {error && (
