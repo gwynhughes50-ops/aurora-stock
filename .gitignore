@@ -23,3 +23,5 @@ build
 .env.local
 .env.*.local
 firebase-debug.log
+# never commit service account keys
+scripts/keys/
