@@ -1,188 +1,182 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Card } from "../ui/card";
-import { X, Minus, Plus } from "lucide-react";
+// src/components/stock/StockMovementDialog.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
-const REASONS = [
-  { value: "used", label: "Used / administered" },
-  { value: "expired", label: "Expired" },
-  { value: "damaged", label: "Damaged" },
-  { value: "lost", label: "Lost" },
-  { value: "other", label: "Other" },
-];
-
+/**
+ * Safe, dependency-light modal for stock movements.
+ * Avoids relying on Dialog/Select components that may not exist in your project.
+ *
+ * Props:
+ * - open (bool)
+ * - onOpenChange (fn)
+ * - item (object)
+ * - mode ("use"|"receive")
+ * - onConfirm ({ qty, reason, notes })
+ */
 export default function StockMovementDialog({
   open,
   onOpenChange,
-  mode = "use", // "use" | "receive"
   item,
+  mode = "use",
   onConfirm,
 }) {
-  const [qty, setQty] = useState(1);
+  const [qtyRaw, setQtyRaw] = useState("1");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
+  const panelRef = useRef(null);
+  const qtyRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
-      setQty(1);
-      setReason("");
-      setNotes("");
-    }
-  }, [open]);
+    if (!open) return;
+    setQtyRaw("1");
+    setReason("");
+    setNotes("");
+    const t = setTimeout(() => qtyRef.current?.focus(), 50);
 
-  const current = Number(item?.current_stock || 0);
+    const onKey = (e) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onOpenChange]);
 
-  const newLevel = useMemo(() => {
-    const q = Number(qty || 0);
-    return mode === "receive" ? current + q : current - q;
-  }, [mode, current, qty]);
+  const qty = useMemo(() => {
+    const n = Number(qtyRaw);
+    if (!Number.isFinite(n)) return 1;
+    return Math.max(1, Math.floor(n));
+  }, [qtyRaw]);
 
-  const notEnough = mode === "use" && newLevel < 0;
-  const requiresReason = mode === "use" && (notEnough || current === 0);
-
-  const canSubmit = useMemo(() => {
-    const q = Number(qty || 0);
-    if (!item) return false;
-    if (q <= 0) return false;
-    if (mode === "use" && q > current) return false;
-    if (requiresReason && !reason) return false;
-    return true;
-  }, [item, qty, mode, current, requiresReason, reason]);
-
-  const close = () => onOpenChange(false);
-
-  const submit = async () => {
-    if (!canSubmit || saving) return;
-    setSaving(true);
-    try {
-      await onConfirm({
-        mode,
-        qty: Number(qty || 0),
-        reason: reason || null,
-        notes: notes || null,
-      });
-      close();
-    } finally {
-      setSaving(false);
-    }
-  };
+  const current = Number(item?.current_stock ?? 0);
+  const next = mode === "use" ? current - qty : current + qty;
+  const title = mode === "use" ? "Use stock" : "Receive stock";
 
   if (!open) return null;
 
+  const close = () => onOpenChange(false);
+
+  const onBackdropMouseDown = (e) => {
+    if (!panelRef.current) return;
+    if (!panelRef.current.contains(e.target)) close();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700/70 bg-slate-900/95 p-4 shadow-2xl text-slate-100">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold">
-            {mode === "use" ? "Use stock" : "Receive stock"}
-          </p>
-          <button
-            onClick={close}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onMouseDown={onBackdropMouseDown}
+    >
+      <div
+        ref={panelRef}
+        className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-950 text-slate-100 shadow-2xl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-800">
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-slate-50">{title}</div>
+            <div className="text-xs text-slate-400">Adjust quantity and confirm.</div>
+          </div>
+          <Button variant="ghost" onClick={close} className="rounded-full">
+            ✕
+          </Button>
         </div>
 
-        <Card className="p-3 bg-slate-950/40 border border-slate-800">
-          <p className="font-semibold">{item?.name || "Item"}</p>
-          <p className="text-sm text-slate-300">
-            Current stock: {current}
-          </p>
-        </Card>
+        {/* Body */}
+        <div className="px-5 py-4 space-y-4">
+          {/* Item header */}
+          <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
+  <div className="font-semibold text-white">{item?.name || "Item"}</div>
+  <div className="text-sm text-slate-200">Current stock: {current}</div>
+</div>
 
-        <div className="mt-4 space-y-3">
+          {/* Quantity */}
           <div>
-            <p className="text-xs text-slate-400 mb-1">Quantity</p>
-            <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-300">Quantity</label>
+            <div className="mt-1 flex items-center gap-2">
               <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setQty((q) => Math.max(1, Number(q || 1) - 1))}
+                type="button"
+                variant="outline"
+                className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                onClick={() => setQtyRaw((v) => String(Math.max(1, Number(v || 1) - 1)))}
               >
-                <Minus className="h-4 w-4" />
+                −
               </Button>
 
               <Input
+                ref={qtyRef}
                 type="number"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                className="text-center"
                 min={1}
+                value={qtyRaw}
+                onChange={(e) => setQtyRaw(e.target.value)}
+                onBlur={() => setQtyRaw(String(qty))}
+                className="text-center bg-slate-900 border-slate-700 text-slate-100"
               />
 
               <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setQty((q) => Number(q || 1) + 1)}
+                type="button"
+                variant="outline"
+                className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                onClick={() => setQtyRaw((v) => String(Math.max(1, Number(v || 1) + 1)))}
               >
-                <Plus className="h-4 w-4" />
+                +
               </Button>
             </div>
           </div>
 
-          <div
-            className={`rounded-xl border p-3 ${
-              notEnough
-                ? "border-rose-500/40 bg-rose-500/10"
-                : "border-slate-800 bg-slate-950/30"
-            }`}
-          >
-            <div className="flex justify-between">
-              <span>New stock level</span>
-              <span className="font-semibold">
-                {Math.max(0, newLevel)}
-              </span>
+          {/* New stock level */}
+          <div>
+            <label className="text-xs text-slate-300">New stock level</label>
+            <div className="mt-1 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-slate-50">
+              {Number.isFinite(next) ? next : "—"}
             </div>
-            {notEnough && (
-              <p className="mt-2 text-xs text-rose-200">
-                Not enough stock available
-              </p>
-            )}
           </div>
 
-          {mode === "use" && (
-            <div>
-              <p className="text-xs text-slate-400 mb-1">
-                Reason {requiresReason ? "*" : ""}
-              </p>
-              <select
-                className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              >
-                <option value="">Select reason…</option>
-                {REASONS.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
+          {/* Reason */}
           <div>
-            <p className="text-xs text-slate-400 mb-1">Notes (optional)</p>
+            <label className="text-xs text-slate-300">Reason</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="" className="text-slate-100">
+                Select reason…
+              </option>
+              <option value="routine">Routine use</option>
+              <option value="expiry">Expired / damaged</option>
+              <option value="audit">Stock audit</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-slate-300">Notes (optional)</label>
             <textarea
-              className="min-h-[80px] w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+              placeholder="Add any notes…"
             />
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={close}>
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-800">
+          <Button variant="outline" className="border-slate-700" onClick={close}>
             Cancel
           </Button>
           <Button
-            onClick={submit}
-            disabled={!canSubmit || saving}
-            className={mode === "use" ? "bg-amber-500 text-slate-950" : ""}
+            className="bg-amber-400 text-slate-950 hover:bg-amber-300"
+            onClick={() => onConfirm?.({ qty, reason, notes })}
           >
-            {saving ? "Saving…" : mode === "use" ? "Use stock" : "Receive stock"}
+            {mode === "use" ? "Use stock" : "Receive stock"}
           </Button>
         </div>
       </div>

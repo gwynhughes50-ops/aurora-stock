@@ -2,17 +2,21 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Thermometer, AlertTriangle, Package, Barcode, Search } from "lucide-react";
+import {
+  Thermometer,
+  AlertTriangle,
+  Package,
+  Barcode,
+  Search,
+  Camera,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
-
-// ✅ Your project uses /src/lib/firebase.js
 import { db } from "@/lib/firebase";
 
-// ✅ Use existing stockService helpers
 import { useStockByBarcode, applyStockMovement } from "@/services/stockService";
-
 import useStockSummary from "@/hooks/useStockSummary";
 
 export default function Dashboard() {
@@ -23,7 +27,6 @@ export default function Dashboard() {
   const muted = "text-slate-400";
   const sub = "text-slate-300";
 
-  // ✅ Your actual collection names
   const COLLECTIONS = {
     stockItems: "stock_items",
     stockMovements: "stock_movements",
@@ -31,17 +34,13 @@ export default function Dashboard() {
   };
 
   // ----------------------------
-  // ✅ SUMMARY (real hook)
+  // SUMMARY
   // ----------------------------
-  const {
-    totalItems,
-    lowStockItems,
-    loading: stockLoading,
-    error: stockError,
-  } = useStockSummary();
+  const { totalItems, lowStockItems, loading: stockLoading, error: stockError } =
+    useStockSummary();
 
   // ----------------------------
-  // ✅ RECENT STOCK ACTIVITY
+  // RECENT STOCK ACTIVITY
   // ----------------------------
   const [recentMoves, setRecentMoves] = useState([]);
   const [movesLoading, setMovesLoading] = useState(true);
@@ -84,7 +83,7 @@ export default function Dashboard() {
   };
 
   // ----------------------------
-  // ✅ LOW STOCK DETAILS (client-side)
+  // LOW STOCK DETAILS
   // ----------------------------
   const [lowStockDetails, setLowStockDetails] = useState([]);
   const [lowLoading, setLowLoading] = useState(true);
@@ -127,7 +126,7 @@ export default function Dashboard() {
   }, []);
 
   // ----------------------------
-  // ✅ EXPIRING SOON (stock_items.expiry_date "YYYY-MM-DD")
+  // EXPIRING SOON
   // ----------------------------
   const [expiringSoon, setExpiringSoon] = useState([]);
   const [expLoading, setExpLoading] = useState(true);
@@ -153,7 +152,9 @@ export default function Dashboard() {
 
         const rows = all
           .map((it) => ({ ...it, _expiryDate: parseYMD(it.expiry_date) }))
-          .filter((it) => it._expiryDate && it._expiryDate >= now && it._expiryDate <= cutoff)
+          .filter(
+            (it) => it._expiryDate && it._expiryDate >= now && it._expiryDate <= cutoff
+          )
           .sort((a, b) => a._expiryDate - b._expiryDate)
           .slice(0, 3);
 
@@ -171,7 +172,7 @@ export default function Dashboard() {
   }, []);
 
   // ----------------------------
-  // ✅ TEMPERATURE (latest measured_at)
+  // TEMPERATURE (latest)
   // ----------------------------
   const [latestTemp, setLatestTemp] = useState(null);
   const [tempLoading, setTempLoading] = useState(true);
@@ -187,7 +188,9 @@ export default function Dashboard() {
     const unsub = onSnapshot(
       qTemp,
       (snap) => {
-        const row = snap.docs[0] ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null;
+        const row = snap.docs[0]
+          ? { id: snap.docs[0].id, ...snap.docs[0].data() }
+          : null;
         setLatestTemp(row);
         setTempLoading(false);
       },
@@ -227,7 +230,7 @@ export default function Dashboard() {
   }, [latestTemp, tempLoading]);
 
   // ----------------------------
-  // ✅ AT-A-GLANCE ISSUES (real)
+  // AT-A-GLANCE ISSUES
   // ----------------------------
   const issues = useMemo(() => {
     const out = [];
@@ -240,7 +243,9 @@ export default function Dashboard() {
       out.push({
         key: `exp-${it.id}`,
         tone: "amber",
-        text: `${it.name || "Item"} expiring on ${it.expiry_date}${it.site ? ` (${it.site})` : ""}.`,
+        text: `${it.name || "Item"} expiring on ${it.expiry_date}${
+          it.site ? ` (${it.site})` : ""
+        }.`,
       });
     });
 
@@ -258,20 +263,14 @@ export default function Dashboard() {
   }, [expiringSoon, lowStockDetails, latestTemp, tempStatus]);
 
   // ----------------------------
-  // ✅ USE STOCK modal state
+  // USE STOCK MODAL
   // ----------------------------
   const [useOpen, setUseOpen] = useState(false);
+  const [useMode, setUseMode] = useState("scan"); // "scan" | "manual"
 
-  // "scan" | "manual"
-  const [useMode, setUseMode] = useState("scan");
-
-  // scan fields
   const [barcode, setBarcode] = useState("");
-
-  // shared qty
   const [qtyRaw, setQtyRaw] = useState("1");
 
-  // manual fields
   const [manualQuery, setManualQuery] = useState("");
   const [manualAllItems, setManualAllItems] = useState([]);
   const [manualLoading, setManualLoading] = useState(false);
@@ -298,6 +297,7 @@ export default function Dashboard() {
     setManualSelected(null);
     setMsg(null);
     setBusy(false);
+    stopCameraScan(); // just in case
   };
 
   // Subscribe items ONLY while modal open (for manual lookup)
@@ -435,6 +435,138 @@ export default function Dashboard() {
     }
   }
 
+  // ----------------------------
+  // CAMERA SCAN (BarcodeDetector)
+  // ----------------------------
+  const [scanOpen, setScanOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMsg, setScanMsg] = useState(null);
+
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const detectorRef = useRef(null);
+
+  const canUseBarcodeDetector = useMemo(() => {
+    return typeof window !== "undefined" && "BarcodeDetector" in window;
+  }, []);
+
+  const stopCameraScan = () => {
+    setScanBusy(false);
+    setScanMsg(null);
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {
+        // ignore
+      }
+    }
+
+    detectorRef.current = null;
+    setScanOpen(false);
+  };
+
+  const startCameraScan = async () => {
+    if (scanBusy) return;
+    setScanMsg(null);
+
+    if (!canUseBarcodeDetector) {
+      setScanMsg({
+        type: "error",
+        text:
+          "Camera scanning isn’t supported in this browser. Use manual scan (type/scan into the box) or try Chrome on Android/desktop.",
+      });
+      return;
+    }
+
+    setScanBusy(true);
+    setScanOpen(true);
+
+    try {
+      // Create detector once
+      // Common formats: "qr_code", "ean_13", "code_128", "upc_a", "ean_8"
+      // If you only want 1D barcodes, keep qr_code out.
+      detectorRef.current = new window.BarcodeDetector({
+        formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
+      });
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      const v = videoRef.current;
+      if (!v) throw new Error("Video element not ready.");
+
+      v.srcObject = stream;
+      v.setAttribute("playsinline", "true");
+      await v.play();
+
+      const tick = async () => {
+        // Modal might have been closed mid-loop
+        if (!videoRef.current || !detectorRef.current) return;
+
+        try {
+          const barcodes = await detectorRef.current.detect(videoRef.current);
+          if (barcodes && barcodes.length) {
+            const raw = String(barcodes[0]?.rawValue || "").trim();
+            if (raw) {
+              setBarcode(raw);
+              setMsg({ type: "ok", text: `Scanned: ${raw}` });
+
+              stopCameraScan();
+              setScanBusy(false);
+
+              // move them on
+              setTimeout(() => qtyRef.current?.focus(), 50);
+              return;
+            }
+          }
+        } catch (e) {
+          // Some devices throw intermittently; don’t spam
+        }
+
+        rafRef.current = requestAnimationFrame(tick);
+      };
+
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      stopCameraScan();
+      setScanBusy(false);
+      setScanMsg({ type: "error", text: String(e?.message || e) });
+    }
+  };
+
+  // If main modal closes, always stop camera
+  useEffect(() => {
+    if (!useOpen) stopCameraScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useOpen]);
+
+  // If switching away from scan mode, stop camera
+  useEffect(() => {
+    if (useMode !== "scan") stopCameraScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useMode]);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -496,7 +628,11 @@ export default function Dashboard() {
             <Thermometer className="h-4 w-4 text-sky-200" />
           </div>
           <p className="mt-1 text-3xl font-semibold text-sky-50">{tempStatus.headline}</p>
-          <p className={`mt-1 text-xs ${tempStatus?.within === false ? "text-rose-200" : "text-sky-100/80"}`}>
+          <p
+            className={`mt-1 text-xs ${
+              tempStatus?.within === false ? "text-rose-200" : "text-sky-100/80"
+            }`}
+          >
             {tempStatus.sub}
           </p>
         </Card>
@@ -652,6 +788,7 @@ export default function Dashboard() {
                   setMsg(null);
                   setUseMode("manual");
                   setBarcode("");
+                  stopCameraScan();
                   setTimeout(() => manualQueryRef.current?.focus(), 50);
                 }}
                 className={`rounded-full px-4 text-xs ${
@@ -668,25 +805,48 @@ export default function Dashboard() {
             <div className="mt-4 space-y-3">
               {useMode === "scan" ? (
                 <div>
-                  <label className="text-xs text-slate-300">Barcode</label>
-                  <Input
-                    ref={barcodeRef}
-                    value={barcode}
-                    onChange={(e) => setBarcode(e.target.value)}
-                    placeholder="Scan barcode…"
-                    className="mt-1 bg-slate-950/40 border-slate-800/70 text-slate-100 placeholder:text-slate-500"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        qtyRef.current?.focus();
-                        qtyRef.current?.select?.();
-                      }
-                    }}
-                    disabled={busy}
-                  />
-                  <div className="mt-2 text-[0.7rem] text-slate-500">
-                    Tip: most scanners submit an Enter key automatically after the barcode.
+                  <div className="flex items-end justify-between gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-300">Barcode</label>
+                      <Input
+                        ref={barcodeRef}
+                        value={barcode}
+                        onChange={(e) => setBarcode(e.target.value)}
+                        placeholder="Scan barcode…"
+                        className="mt-1 bg-slate-950/40 border-slate-800/70 text-slate-100 placeholder:text-slate-500"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            qtyRef.current?.focus();
+                            qtyRef.current?.select?.();
+                          }
+                        }}
+                        disabled={busy}
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy || scanBusy}
+                      onClick={startCameraScan}
+                      className="rounded-xl border border-slate-700/60 bg-slate-950/30 hover:bg-slate-900/40 text-slate-100"
+                      title="Open camera scanner"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Scan
+                    </Button>
                   </div>
+
+                  <div className="mt-2 text-[0.7rem] text-slate-500">
+                    Tip: many scanners “type” into the box then send Enter automatically.
+                  </div>
+
+                  {scanMsg?.type === "error" && (
+                    <div className="mt-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                      {scanMsg.text}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -750,7 +910,8 @@ export default function Dashboard() {
 
                   {manualSelected?.id && (
                     <div className="mt-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
-                      Selected: <span className="font-medium">{manualSelected.name || "Item"}</span>
+                      Selected:{" "}
+                      <span className="font-medium">{manualSelected.name || "Item"}</span>
                       {manualSelected.site ? ` (${manualSelected.site})` : ""}
                       {manualSelected.location ? ` • ${manualSelected.location}` : ""}
                     </div>
@@ -806,6 +967,40 @@ export default function Dashboard() {
               </Button>
             </div>
           </div>
+
+          {/* ---- CAMERA OVERLAY (separate panel) ---- */}
+          {scanOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 backdrop-blur">
+              <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 p-4 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-base font-semibold text-slate-50">Camera scan</div>
+                    <div className="text-xs text-slate-400">
+                      Point the camera at the barcode.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={stopCameraScan}
+                    className="rounded-xl"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Close
+                  </Button>
+                </div>
+
+                <div className="mt-3 overflow-hidden rounded-2xl border border-slate-800/70 bg-black">
+                  <video ref={videoRef} className="h-72 w-full object-cover" />
+                </div>
+
+                <div className="mt-3 text-xs text-slate-400">
+                  If it doesn’t catch instantly: move slightly closer, tilt a touch, and let it
+                  focus.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

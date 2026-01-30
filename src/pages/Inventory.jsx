@@ -18,23 +18,13 @@ import useStock from "@/hooks/useStock";
 import { getRole, canArchive, canEdit, canMoveStock } from "@/auth/permissions";
 import { auth } from "@/lib/firebase";
 
-import {
-  Search,
-  Package,
-  Pencil,
-  History,
-  Trash2,
-  Archive,
-  RotateCcw,
-} from "lucide-react";
+import { Search, Package, Pencil, History, Trash2, Archive, RotateCcw } from "lucide-react";
 
 /* helpers */
 const getStockBadge = (qty, min) => {
   const q = Number(qty ?? 0);
   const m = Number(min ?? 0);
-  return q <= m
-    ? "bg-rose-500/20 text-rose-300"
-    : "bg-emerald-500/20 text-emerald-300";
+  return q <= m ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300";
 };
 
 function TabButton({ active, onClick, children }) {
@@ -54,25 +44,26 @@ function TabButton({ active, onClick, children }) {
   );
 }
 
+// Robust archived detector (handles null/undefined/"")
+function isArchivedItem(it) {
+  const v = it?.archived_at;
+  return v !== null && v !== undefined && v !== "";
+}
+
 export default function Inventory() {
   /* auth */
   const user = auth.currentUser ?? null;
 
-  // If user is temporarily null (auth still loading), use a safe stub to prevent crashes.
-  const actorUser =
-    user ??
-    ({
-      uid: null,
-      displayName: "Unknown",
-      email: null,
-      name: "Unknown",
-    });
+  const actorUser = {
+    uid: user?.uid || null,
+    displayName: user?.displayName || user?.name || "Unknown",
+    email: user?.email || null,
+  };
 
-  // Permissions: guard getRole so we never crash if user is null or claims not ready.
   let role = "staff";
   try {
     role = getRole(user) || "staff";
-  } catch (e) {
+  } catch {
     role = "staff";
   }
 
@@ -109,25 +100,34 @@ export default function Inventory() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
-  /* stock hook */
-  const {
-    items,
-    loading,
-    error,
-    archiveItem,
-    restoreItem,
-    receiveStock,
-    useStockQty,
-    addItem,
-    updateItem,
-  } = useStock({ includeArchived: showArchived });
+  /**
+   * IMPORTANT:
+   * We always subscribe to ALL (active + archived) and filter client-side,
+   * so the toggle cannot get “stuck” due to a listener not re-subscribing.
+   */
+  const { items, loading, error, archiveItem, restoreItem, receiveStock, useStockQty, addItem, updateItem } =
+    useStock({ includeArchived: true });
+
+  const counts = useMemo(() => {
+    const total = Array.isArray(items) ? items.length : 0;
+    let archived = 0;
+    let active = 0;
+    (items || []).forEach((it) => {
+      if (isArchivedItem(it)) archived += 1;
+      else active += 1;
+    });
+    return { total, active, archived };
+  }, [items]);
 
   /* derived */
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
+    const rows = Array.isArray(items) ? items : [];
+    const base = showArchived ? rows : rows.filter((it) => !isArchivedItem(it));
 
-    return items.filter((it) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return base;
+
+    return base.filter((it) => {
       const name = String(it?.name || "").toLowerCase();
       const barcode = String(it?.barcode || "").toLowerCase();
       const site = String(it?.site || "").toLowerCase();
@@ -142,7 +142,7 @@ export default function Inventory() {
         category.includes(q)
       );
     });
-  }, [items, search]);
+  }, [items, search, showArchived]);
 
   /* handlers */
   const openDelete = (item) => {
@@ -184,10 +184,7 @@ export default function Inventory() {
       site: item?.site ?? "",
       location: item?.location ?? "",
       category: item?.category ?? "",
-      min_stock:
-        typeof item?.min_stock === "number"
-          ? item.min_stock
-          : Number(item?.min_stock ?? 0) || 0,
+      min_stock: typeof item?.min_stock === "number" ? item.min_stock : Number(item?.min_stock ?? 0) || 0,
     });
     setEditError("");
     setEditOpen(true);
@@ -270,13 +267,36 @@ export default function Inventory() {
                 />
               </div>
 
-              <Button variant="ghost" onClick={() => setShowArchived((v) => !v)}>
+              <Button
+                variant="ghost"
+                onClick={() => setShowArchived((v) => !v)}
+                title="Toggle archived visibility"
+              >
                 {showArchived ? "Hide archived" : "Show archived"}
               </Button>
 
               <Button onClick={() => setManualAddOpen(true)}>Add item</Button>
 
               <MobileBarcodeScanner />
+            </div>
+
+            {/* Debug / status line (helps confirm toggle is actually switching) */}
+            <div className="mt-2 text-[11px] text-slate-400 flex flex-wrap gap-2">
+              <span className="rounded-full border border-slate-800/70 bg-slate-900/40 px-2 py-0.5">
+                Mode: {showArchived ? "Showing archived" : "Hiding archived"}
+              </span>
+              <span className="rounded-full border border-slate-800/70 bg-slate-900/40 px-2 py-0.5">
+                Total: {counts.total}
+              </span>
+              <span className="rounded-full border border-slate-800/70 bg-slate-900/40 px-2 py-0.5">
+                Active: {counts.active}
+              </span>
+              <span className="rounded-full border border-slate-800/70 bg-slate-900/40 px-2 py-0.5">
+                Archived: {counts.archived}
+              </span>
+              <span className="rounded-full border border-slate-800/70 bg-slate-900/40 px-2 py-0.5">
+                Showing: {filtered.length}
+              </span>
             </div>
           </div>
 
@@ -285,26 +305,20 @@ export default function Inventory() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((item) => {
-              const archived = Boolean(item.archived_at);
+              const archived = isArchivedItem(item);
 
               return (
                 <Card
                   key={item.id}
                   className={`p-4 rounded-2xl border ${
-                    archived
-                      ? "bg-slate-900/40 text-slate-400"
-                      : "bg-slate-900/90 text-slate-100"
+                    archived ? "bg-slate-900/40 text-slate-400" : "bg-slate-900/90 text-slate-100"
                   }`}
                 >
                   <div className="flex justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold truncate">{item.name}</p>
 
-                      {item.barcode && (
-                        <p className="text-xs text-slate-400 truncate">
-                          {item.barcode}
-                        </p>
-                      )}
+                      {item.barcode && <p className="text-xs text-slate-400 truncate">{item.barcode}</p>}
 
                       {(item.site || item.location) && (
                         <p className="mt-1 text-xs text-slate-300 flex items-center gap-1 truncate">
@@ -338,17 +352,10 @@ export default function Inventory() {
 
                   {!archived && (
                     <div className="mt-3 grid grid-cols-2 gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => openUse(item)}
-                        disabled={!canMoveStock(role)}
-                      >
+                      <Button variant="outline" onClick={() => openUse(item)} disabled={!canMoveStock(role)}>
                         - Use
                       </Button>
-                      <Button
-                        onClick={() => openReceive(item)}
-                        disabled={!canMoveStock(role)}
-                      >
+                      <Button onClick={() => openReceive(item)} disabled={!canMoveStock(role)}>
                         + Receive
                       </Button>
                     </div>
@@ -357,18 +364,11 @@ export default function Inventory() {
                   <div className="mt-3 flex justify-between items-center">
                     <PhotoCapture
                       buttonLabel="Photo"
-                      onCapture={(img) =>
-                        updateItem(item.id, { photo_url: img }, { actor: actorUser })
-                      }
+                      onCapture={(img) => updateItem(item.id, { photo_url: img }, { actor: actorUser })}
                     />
 
                     <div className="flex gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => openHistory(item)}
-                        title="History"
-                      >
+                      <Button size="icon" variant="ghost" onClick={() => openHistory(item)} title="History">
                         <History className="h-4 w-4" />
                       </Button>
 
@@ -414,9 +414,7 @@ export default function Inventory() {
                     </div>
                   </div>
 
-                  {archived && (
-                    <div className="mt-3 text-xs text-slate-500">Archived</div>
-                  )}
+                  {archived && <div className="mt-3 text-xs text-slate-500">Archived</div>}
                 </Card>
               );
             })}
@@ -438,7 +436,6 @@ export default function Inventory() {
           />
 
           <StockHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} item={historyItem} />
-
           <ManualAddItemDialog open={manualAddOpen} onOpenChange={setManualAddOpen} onCreate={addItem} />
 
           <>
@@ -452,9 +449,7 @@ export default function Inventory() {
                       <p className="text-xs text-slate-400 mb-1">Item name *</p>
                       <Input
                         value={editForm.name}
-                        onChange={(e) =>
-                          setEditForm((f) => ({ ...f, name: e.target.value }))
-                        }
+                        onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                         placeholder="e.g. Syringe 10ml"
                       />
                     </div>
@@ -463,9 +458,7 @@ export default function Inventory() {
                       <p className="text-xs text-slate-400 mb-1">Barcode</p>
                       <Input
                         value={editForm.barcode}
-                        onChange={(e) =>
-                          setEditForm((f) => ({ ...f, barcode: e.target.value }))
-                        }
+                        onChange={(e) => setEditForm((f) => ({ ...f, barcode: e.target.value }))}
                         placeholder="Optional"
                       />
                     </div>
@@ -475,9 +468,7 @@ export default function Inventory() {
                         <p className="text-xs text-slate-400 mb-1">Site (building) *</p>
                         <Input
                           value={editForm.site}
-                          onChange={(e) =>
-                            setEditForm((f) => ({ ...f, site: e.target.value }))
-                          }
+                          onChange={(e) => setEditForm((f) => ({ ...f, site: e.target.value }))}
                           placeholder="e.g. main_branch"
                         />
                       </div>
@@ -486,9 +477,7 @@ export default function Inventory() {
                         <p className="text-xs text-slate-400 mb-1">Room / Location *</p>
                         <Input
                           value={editForm.location}
-                          onChange={(e) =>
-                            setEditForm((f) => ({ ...f, location: e.target.value }))
-                          }
+                          onChange={(e) => setEditForm((f) => ({ ...f, location: e.target.value }))}
                           placeholder="e.g. Room D90"
                         />
                       </div>
@@ -499,9 +488,7 @@ export default function Inventory() {
                         <p className="text-xs text-slate-400 mb-1">Category</p>
                         <Input
                           value={editForm.category}
-                          onChange={(e) =>
-                            setEditForm((f) => ({ ...f, category: e.target.value }))
-                          }
+                          onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}
                           placeholder="e.g. Dressings"
                         />
                       </div>
@@ -511,18 +498,14 @@ export default function Inventory() {
                         <Input
                           type="number"
                           value={editForm.min_stock}
-                          onChange={(e) =>
-                            setEditForm((f) => ({ ...f, min_stock: e.target.value }))
-                          }
+                          onChange={(e) => setEditForm((f) => ({ ...f, min_stock: e.target.value }))}
                           placeholder="0"
                         />
                       </div>
                     </div>
                   </div>
 
-                  {editError && (
-                    <p className="mt-3 text-sm text-rose-300">{editError}</p>
-                  )}
+                  {editError && <p className="mt-3 text-sm text-rose-300">{editError}</p>}
 
                   <div className="mt-5 flex justify-end gap-2">
                     <Button

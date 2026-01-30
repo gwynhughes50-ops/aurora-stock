@@ -54,6 +54,31 @@ function normalizeItemPatch(patch = {}) {
   return out;
 }
 
+// ✅ Structured error helper (lets UI detect barcode conflicts cleanly)
+function makeError(code, message, extra = {}) {
+  const err = new Error(message);
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
+}
+
+// ✅ Actor normalizer (Firestore cannot store Firebase Auth user objects)
+function normalizeActor(actor) {
+  if (!actor) return null;
+
+  // Firebase Auth user (_UserImpl) is not serializable; keep only primitives.
+  const uid = actor?.uid ?? actor?.user?.uid ?? null;
+  const displayName =
+    actor?.displayName ?? actor?.user?.displayName ?? actor?.name ?? null;
+  const email = actor?.email ?? actor?.user?.email ?? null;
+
+  return {
+    uid: uid || null,
+    displayName: displayName || null,
+    email: email || null,
+  };
+}
+
 /**
  * Realtime subscription for items
  * includeArchived=false => active only
@@ -105,7 +130,9 @@ export async function createStockItem(data) {
       const barcodeRef = doc(db, BARCODE_COL, barcodeKey);
       const barcodeSnap = await tx.get(barcodeRef);
       if (barcodeSnap.exists()) {
-        throw new Error("Barcode already in use. Please check the item or use a different barcode.");
+        throw new Error(
+          "Barcode already in use. Please check the item or use a different barcode."
+        );
       }
       tx.set(barcodeRef, {
         item_id: itemRef.id,
@@ -133,8 +160,6 @@ export async function createStockItem(data) {
   return itemRef.id;
 }
 
-
-
 export async function updateStockItem(id, patch) {
   const itemRef = doc(db, ITEMS_COL, id);
   const moveRef = doc(collection(db, MOVES_COL));
@@ -149,8 +174,7 @@ export async function updateStockItem(id, patch) {
 
     const normalizedPatch = normalizeItemPatch(patch);
 
-    const nextBarcode =
-      "barcode" in patch ? cleanString(patch?.barcode) : beforeBarcode;
+    const nextBarcode = "barcode" in patch ? cleanString(patch?.barcode) : beforeBarcode;
 
     const beforeKey = normalizeBarcode(beforeBarcode);
     const nextKey = normalizeBarcode(nextBarcode);
@@ -194,14 +218,13 @@ export async function updateStockItem(id, patch) {
   });
 }
 
-
-
 /**
  * ✅ Archive instead of delete
  */
 export async function archiveStockItem(id, actor = null) {
   const itemRef = doc(db, ITEMS_COL, id);
   const moveRef = doc(collection(db, MOVES_COL));
+  const actorSafe = normalizeActor(actor);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(itemRef);
@@ -218,7 +241,7 @@ export async function archiveStockItem(id, actor = null) {
 
     tx.update(itemRef, {
       archived_at: serverTimestamp(),
-      archived_by: actor || null,
+      archived_by: actorSafe,
       updated_at: serverTimestamp(),
     });
 
@@ -231,17 +254,35 @@ export async function archiveStockItem(id, actor = null) {
       qty_after: null,
       reason: null,
       notes: null,
-      actor: actor || null,
+      actor: actorSafe,
       created_at: serverTimestamp(),
     });
   });
 }
 
+/**
+ * ✅ Restore archived item.
+ *
+ * If the archived item’s barcode is already claimed by another ACTIVE item
+ * (i.e. exists in BARCODE_COL), we keep uniqueness intact and throw:
+ *   err.code === "BARCODE_IN_USE"
+ *
+ * Optional escape hatch:
+ *   restoreStockItem(id, actor, { removeBarcodeOnConflict: true })
+ * Restores the item but clears `barcode` and stores original in `barcode_conflict_original`.
+ */
+export async function restoreStockItem(id, actor = null, options = {}) {
+  // Backwards compatible: if someone calls restoreStockItem(id, { removeBarcodeOnConflict:true })
+  if (actor && typeof actor === "object" && !Array.isArray(actor) && !actor?.uid) {
+    options = actor;
+    actor = null;
+  }
 
+  const { removeBarcodeOnConflict = false } = options || {};
 
-export async function restoreStockItem(id, actor = null) {
   const itemRef = doc(db, ITEMS_COL, id);
   const moveRef = doc(collection(db, MOVES_COL));
+  const actorSafe = normalizeActor(actor);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(itemRef);
@@ -252,20 +293,44 @@ export async function restoreStockItem(id, actor = null) {
     const barcode = cleanString(data?.barcode);
     const barcodeKey = normalizeBarcode(barcode);
 
+    let barcodeConflict = null;
+
     if (barcodeKey) {
       const bRef = doc(db, BARCODE_COL, barcodeKey);
       const bSnap = await tx.get(bRef);
+
       if (bSnap.exists()) {
-        throw new Error("Cannot restore: this barcode is already in use by another item.");
+        const bData = bSnap.data() || {};
+        if (bData?.item_id && bData.item_id !== id) {
+          barcodeConflict = { barcode, conflictItemId: bData.item_id || null };
+          if (!removeBarcodeOnConflict) {
+            throw makeError(
+              "BARCODE_IN_USE",
+              "Cannot restore: this barcode is already in use by another item.",
+              { barcode, conflictItemId: bData.item_id || null }
+            );
+          }
+        }
       }
-      tx.set(bRef, { item_id: id, barcode, updated_at: serverTimestamp() });
+
+      // If no conflict and barcode index is free, claim it back
+      if (!bSnap.exists()) {
+        tx.set(bRef, { item_id: id, barcode, updated_at: serverTimestamp() });
+      }
     }
 
-    tx.update(itemRef, {
+    const restorePatch = {
       archived_at: null,
       archived_by: null,
       updated_at: serverTimestamp(),
-    });
+    };
+
+    if (barcodeConflict && removeBarcodeOnConflict) {
+      restorePatch.barcode = "";
+      restorePatch.barcode_conflict_original = barcode;
+    }
+
+    tx.update(itemRef, restorePatch);
 
     tx.set(moveRef, {
       item_id: id,
@@ -276,13 +341,11 @@ export async function restoreStockItem(id, actor = null) {
       qty_after: null,
       reason: null,
       notes: null,
-      actor: actor || null,
+      actor: actorSafe,
       created_at: serverTimestamp(),
     });
   });
 }
-
-
 
 /**
  * ✅ Stock movement transaction (receive/use/adjust)
@@ -330,7 +393,7 @@ export async function applyStockMovement(itemId, movement) {
 
     const reason = movement?.reason || null;
     const notes = movement?.notes || null;
-    const actor = movement?.actor || null;
+    const actor = normalizeActor(movement?.actor);
 
     tx.update(itemRef, {
       current_stock: after,
@@ -349,7 +412,7 @@ export async function applyStockMovement(itemId, movement) {
     const moveRef = doc(collection(db, MOVES_COL));
     tx.set(moveRef, {
       item_id: itemId,
-      item_name, // ✅ added
+      item_name,
       type,
       delta,
       qty_before: before,
@@ -392,6 +455,7 @@ export async function fetchMovements(itemId, max = 50) {
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
+
 /**
  * ✅ Ultra-fast barcode-driven "USE STOCK" helper
  * Used by Dashboard quick action
@@ -404,12 +468,7 @@ export async function useStockQuick({ barcode, qty, actor = null }) {
   if (!Number.isFinite(n) || n <= 0) throw new Error("Invalid quantity.");
 
   // 1️⃣ Find item by barcode
-  const q = query(
-    collection(db, ITEMS_COL),
-    where("barcode", "==", code),
-    limit(1)
-  );
-
+  const q = query(collection(db, ITEMS_COL), where("barcode", "==", code), limit(1));
   const snap = await getDocs(q);
 
   if (snap.empty) {
@@ -428,8 +487,9 @@ export async function useStockQuick({ barcode, qty, actor = null }) {
   return true;
 }
 
- // Add near the bottom of src/services/stockService.js
-
+/**
+ * ✅ Barcode-index driven "USE STOCK" helper (fast)
+ */
 export async function useStockByBarcode({ barcode, qty, actor = null }) {
   const raw = String(barcode || "").trim();
   const n = Number(qty);
@@ -455,7 +515,3 @@ export async function useStockByBarcode({ barcode, qty, actor = null }) {
 
   return true;
 }
-
-
- 
-  
