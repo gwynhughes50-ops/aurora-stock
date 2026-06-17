@@ -277,7 +277,7 @@ export default function Inventory() {
 
               <Button onClick={() => setManualAddOpen(true)}>Add item</Button>
 
-              <MobileBarcodeScanner />
+              <MobileBarcodeScanner onScan={handleBarcodeScan} />
             </div>
 
             {/* Debug / status line (helps confirm toggle is actually switching) */}
@@ -306,6 +306,22 @@ export default function Inventory() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((item) => {
               const archived = isArchivedItem(item);
+              const handleBarcodeScan = (code) => {
+                const scannedCode = String(code || "").trim();
+                if (!scannedCode) return;
+              
+                setSearch(scannedCode);
+              
+                const match = (items || []).find(
+                  (it) => String(it?.barcode || "").trim() === scannedCode
+                );
+              
+                if (match && !isArchivedItem(match)) {
+                  setActiveItem(match);
+                  setMoveMode("use");
+                  setMoveOpen(true);
+                }
+              };
 
               return (
                 <Card

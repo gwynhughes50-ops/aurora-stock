@@ -18,9 +18,10 @@ import { db } from "@/lib/firebase";
 
 import { useStockByBarcode, applyStockMovement } from "@/services/stockService";
 import useStockSummary from "@/hooks/useStockSummary";
+import { ThemePickerButton } from "@/components/theme/MedTrakThemeProvider";
 
 export default function Dashboard() {
-  const navigate = useNavigate();
+  const navigate = useNavigate();ThemePickerButton
 
   const cardBase =
     "rounded-2xl border border-slate-800/70 bg-slate-900/60 text-slate-100 shadow-sm backdrop-blur";
@@ -574,19 +575,22 @@ export default function Dashboard() {
           <div className="text-xl font-semibold text-slate-50">Dashboard</div>
           <div className="text-sm text-slate-400">Quick actions for busy clinic use.</div>
         </div>
-
-        <Button
-          onClick={() => {
-            resetUseModal();
-            setUseOpen(true);
-          }}
-          className="rounded-2xl px-6 py-6 text-base font-semibold bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/25"
-        >
-          <Barcode className="h-5 w-5 mr-2" />
-          USE STOCK
-        </Button>
+  
+        <div className="flex flex-wrap items-center gap-2">
+          <ThemePickerButton />
+  
+          <Button
+            onClick={() => {
+              resetUseModal();
+              setUseOpen(true);
+            }}
+            className="rounded-2xl px-6 py-6 text-base font-semibold bg-gradient-to-r from-teal-500 to-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/25"
+          >
+            <Barcode className="h-5 w-5 mr-2" />
+            USE STOCK
+          </Button>
+        </div>
       </div>
-
       {(stockError || movesError || lowError || tempError) && (
         <div className="text-xs text-rose-200 space-y-1">
           {stockError && <div>{String(stockError?.message || stockError)}</div>}
@@ -607,7 +611,7 @@ export default function Dashboard() {
           <p className="mt-1 text-xs text-slate-400">Across all locations and categories.</p>
         </Card>
 
-        <Card className="rounded-2xl p-4 border-amber-400/25 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-slate-900 text-slate-100">
+        <Card className="medtrak-low-stock-card rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <p className="text-[0.7rem] font-medium uppercase tracking-wide text-amber-100/90">
               Low stock
@@ -620,7 +624,7 @@ export default function Dashboard() {
           <p className="mt-1 text-xs text-amber-100/80">Items at or below minimum level.</p>
         </Card>
 
-        <Card className="rounded-2xl p-4 border-sky-400/25 bg-gradient-to-br from-sky-500/10 via-cyan-500/5 to-slate-900 text-slate-100">
+        <Card className="medtrak-temperature-card rounded-2xl p-4">
           <div className="flex items-center justify-between">
             <p className="text-[0.7rem] font-medium uppercase tracking-wide text-sky-100/90">
               Temperature

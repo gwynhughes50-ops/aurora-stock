@@ -1,14 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X } from "lucide-react";
+import { X, Camera, Keyboard } from "lucide-react";
 
 /**
  * MobileBarcodeScanner
- * - Opens a modal
- * - Requests camera with rear-facing preference
- * - Shows live video if camera works
- * - If you have a barcode decoding lib, you can plug it in where marked
+ * Uses ZXing for much better mobile barcode detection than native BarcodeDetector.
  *
  * Props:
  * - onScan(code: string)
@@ -18,105 +16,143 @@ export default function MobileBarcodeScanner({ onScan }) {
   const [status, setStatus] = useState("");
   const [errText, setErrText] = useState("");
   const [manual, setManual] = useState("");
+  const [manualMode, setManualMode] = useState(false);
 
   const videoRef = useRef(null);
-  const streamRef = useRef(null);
+  const controlsRef = useRef(null);
+  const readerRef = useRef(null);
+  const stoppedRef = useRef(false);
 
-  const close = () => setOpen(false);
+  const stopScanner = () => {
+    stoppedRef.current = true;
 
-  // Stop camera when closing/unmounting
-  const stopCamera = () => {
     try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+      controlsRef.current?.stop?.();
+    } catch {
+      // ignore
+    }
+
+    controlsRef.current = null;
+
+    try {
+      const stream = videoRef.current?.srcObject;
+      if (stream?.getTracks) {
+        stream.getTracks().forEach((track) => track.stop());
       }
-    } catch {}
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    } catch {
+      // ignore
+    }
+
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      } catch {
+        // ignore
+      }
+    }
   };
 
-  // Core: request camera
-  const startCamera = async () => {
-    setStatus("Requesting camera…");
+  const close = () => {
+    stopScanner();
+    setOpen(false);
+    setStatus("");
     setErrText("");
-
-    // Required checks
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      setErrText("Camera API not available in this browser/environment.");
-      setStatus("");
-      return;
-    }
-
-    try {
-      // Prefer rear camera on phones; fallback to any camera
-      const constraints = {
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      setStatus("Camera active. Line barcode up inside the box.");
-    } catch (e) {
-      // Show exact browser error (this is the truth)
-      const name = e?.name || "UnknownError";
-      const msg = e?.message || String(e);
-
-      let hint = "";
-      if (name === "NotAllowedError" || name === "SecurityError") {
-        hint =
-          "Permission blocked. Allow camera for this site in browser settings, then refresh.";
-      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-        hint =
-          "No camera found (or rear camera unavailable). Try a device with a camera.";
-      } else if (name === "NotReadableError") {
-        hint =
-          "Camera is in use by another app (Zoom/Teams) or OS blocked access. Close other apps and retry.";
-      } else if (name === "AbortError") {
-        hint = "Camera start was interrupted. Try again.";
-      } else {
-        hint = "Check HTTPS/localhost and browser permissions.";
-      }
-
-      setErrText(`${name}: ${msg}${hint ? `\n\n${hint}` : ""}`);
-      setStatus("");
-      stopCamera();
-    }
+    setManualMode(false);
   };
 
-  useEffect(() => {
-    if (!open) {
-      stopCamera();
-      return;
-    }
-    startCamera();
-
-    return () => stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // If you later add decoding, call onScan("code") and close().
-  const submitManual = () => {
-    const code = manual.trim();
+  const submitCode = (value) => {
+    const code = String(value || "").trim();
     if (!code) return;
+
     onScan?.(code);
     setManual("");
     close();
   };
 
+  const startScanner = async () => {
+    setErrText("");
+    setStatus("Starting camera…");
+    stoppedRef.current = false;
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setErrText("Camera API not available in this browser. Use manual entry.");
+      setStatus("");
+      setManualMode(true);
+      return;
+    }
+
+    try {
+      stopScanner();
+      stoppedRef.current = false;
+
+      const reader = new BrowserMultiFormatReader();
+
+            readerRef.current = reader;
+
+      setStatus("Camera active. Hold the barcode inside the box and keep still.");
+
+      const controls = await reader.decodeFromConstraints(
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        },
+        videoRef.current,
+        (result, error, controls) => {
+          if (stoppedRef.current) return;
+
+          if (result) {
+            const text = result.getText?.() || String(result);
+            if (text) {
+              setStatus(`Scanned: ${text}`);
+              submitCode(text);
+            }
+          }
+        }
+      );
+
+      controlsRef.current = controls;
+    } catch (e) {
+      const name = e?.name || "ScannerError";
+      const msg = e?.message || String(e);
+
+      setErrText(
+        `${name}: ${msg}\n\nTry better light, hold the phone still, or use manual entry.`
+      );
+      setStatus("");
+      setManualMode(true);
+      stopScanner();
+    }
+  };
+
+  useEffect(() => {
+    if (!open || manualMode) return;
+
+    const t = setTimeout(() => {
+      startScanner();
+    }, 100);
+
+    return () => {
+      clearTimeout(t);
+      stopScanner();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, manualMode]);
+
+  useEffect(() => {
+    return () => stopScanner();
+  }, []);
+
+  const submitManual = () => submitCode(manual);
+
   return (
     <>
       <Button onClick={() => setOpen(true)} className="gap-2" variant="outline">
+        <Camera className="h-4 w-4" />
         Scan
       </Button>
 
@@ -127,7 +163,7 @@ export default function MobileBarcodeScanner({ onScan }) {
               <div>
                 <p className="text-sm font-semibold">Scan barcode</p>
                 <p className="text-xs text-slate-400">
-                  If camera fails, use manual entry below.
+                  Rear camera scanning with manual fallback.
                 </p>
               </div>
 
@@ -141,18 +177,25 @@ export default function MobileBarcodeScanner({ onScan }) {
               </button>
             </div>
 
-            <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-black">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="h-72 w-full object-cover"
-              />
-              {/* Scan box overlay */}
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="h-28 w-64 rounded-2xl border-2 border-teal-400/70 shadow-[0_0_30px_rgba(45,212,191,0.35)]" />
+            {!manualMode && (
+              <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-black">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  autoPlay
+                  className="h-72 w-full object-cover"
+                />
+
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="h-28 w-64 rounded-2xl border-2 border-teal-400/80 shadow-[0_0_30px_rgba(45,212,191,0.45)]" />
+                </div>
+
+                <div className="pointer-events-none absolute bottom-3 left-3 right-3 rounded-xl bg-black/50 px-3 py-2 text-xs text-white">
+                  Fill the box with the barcode. Move slowly until it locks.
+                </div>
               </div>
-            </div>
+            )}
 
             {status && (
               <p className="mt-3 text-xs text-slate-300 whitespace-pre-line">
@@ -166,13 +209,36 @@ export default function MobileBarcodeScanner({ onScan }) {
               </p>
             )}
 
-            {/* Manual fallback */}
             <div className="mt-4 space-y-2">
-              <p className="text-xs text-slate-400">Enter barcode manually</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-slate-400">Manual barcode entry</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    stopScanner();
+                    setManualMode((v) => !v);
+                    setStatus("");
+                    setErrText("");
+                  }}
+                >
+                  <Keyboard className="mr-1 h-3.5 w-3.5" />
+                  {manualMode ? "Use camera" : "Manual"}
+                </Button>
+              </div>
+
               <div className="flex gap-2">
                 <Input
                   value={manual}
                   onChange={(e) => setManual(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitManual();
+                    }
+                  }}
                   placeholder="Type or paste barcode…"
                 />
                 <Button onClick={submitManual} disabled={!manual.trim()}>
@@ -185,8 +251,10 @@ export default function MobileBarcodeScanner({ onScan }) {
               <Button
                 variant="ghost"
                 onClick={() => {
-                  stopCamera();
-                  startCamera();
+                  setManualMode(false);
+                  setErrText("");
+                  setStatus("");
+                  startScanner();
                 }}
               >
                 Retry camera
@@ -201,4 +269,3 @@ export default function MobileBarcodeScanner({ onScan }) {
     </>
   );
 }
-

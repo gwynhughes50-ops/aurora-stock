@@ -761,7 +761,7 @@ export default function Alerts() {
         {view === "active" && activeAlerts.length === 0 && !loadError && !tempError ? (
           <Card className="p-4 border-emerald-400/30 bg-emerald-500/10">
             <p className="text-sm text-emerald-50">No active alerts 🎉</p>
-            <p className="mt-1 text-xs text-emerald-50/80">
+            <p className="mt-1 text-xs text-emerald-700">
               (Auto-generated from expiry dates, min stock levels, and latest temperature readings.)
             </p>
           </Card>

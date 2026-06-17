@@ -15,6 +15,8 @@ import Reports from "./pages/Reports";
 import Compliance from "./pages/Compliance";
 import Notifications from "./pages/Notifications";
 
+import { MedTrakThemeProvider } from "./components/theme/MedTrakThemeProvider";
+
 import Help from "./pages/Help";
 import LoadingPage from "./pages/LoadingPage";
 
@@ -24,6 +26,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import RequireAuth from "./routes/RequireAuth.jsx";
+
 
 function AppRouter() {
   return (
@@ -65,10 +68,13 @@ function AppRouter() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <AppRouter />
-      </AuthProvider>
-    </BrowserRouter>
+    <MedTrakThemeProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <AppRouter />
+        </AuthProvider>
+      </BrowserRouter>
+    </MedTrakThemeProvider>
   </React.StrictMode>
 );
+
