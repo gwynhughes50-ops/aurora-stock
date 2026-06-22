@@ -19,9 +19,11 @@ import { db } from "@/lib/firebase";
 import { useStockByBarcode, applyStockMovement } from "@/services/stockService";
 import useStockSummary from "@/hooks/useStockSummary";
 import { ThemePickerButton } from "@/components/theme/MedTrakThemeProvider";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import MobileBarcodeScanner from "@/components/ui/MobileBarcodeScanner";
 
 export default function Dashboard() {
-  const navigate = useNavigate();ThemePickerButton
+  const navigate = useNavigate();
 
   const cardBase =
     "rounded-2xl border border-slate-800/70 bg-slate-900/60 text-slate-100 shadow-sm backdrop-blur";
@@ -437,7 +439,7 @@ export default function Dashboard() {
   }
 
   // ----------------------------
-  // CAMERA SCAN (BarcodeDetector)
+  // CAMERA SCAN (ZXing)
   // ----------------------------
   const [scanOpen, setScanOpen] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
@@ -445,21 +447,21 @@ export default function Dashboard() {
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const rafRef = useRef(null);
-  const detectorRef = useRef(null);
-
-  const canUseBarcodeDetector = useMemo(() => {
-    return typeof window !== "undefined" && "BarcodeDetector" in window;
-  }, []);
+  const readerRef = useRef(null);
+  const controlsRef = useRef(null);
 
   const stopCameraScan = () => {
     setScanBusy(false);
     setScanMsg(null);
 
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
+    try {
+      controlsRef.current?.stop?.();
+    } catch {
+      // ignore
     }
+
+    controlsRef.current = null;
+    readerRef.current = null;
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -475,84 +477,55 @@ export default function Dashboard() {
       }
     }
 
-    detectorRef.current = null;
     setScanOpen(false);
   };
 
   const startCameraScan = async () => {
     if (scanBusy) return;
+
     setScanMsg(null);
-
-    if (!canUseBarcodeDetector) {
-      setScanMsg({
-        type: "error",
-        text:
-          "Camera scanning isn’t supported in this browser. Use manual scan (type/scan into the box) or try Chrome on Android/desktop.",
-      });
-      return;
-    }
-
     setScanBusy(true);
     setScanOpen(true);
 
     try {
-      // Create detector once
-      // Common formats: "qr_code", "ean_13", "code_128", "upc_a", "ean_8"
-      // If you only want 1D barcodes, keep qr_code out.
-      detectorRef.current = new window.BarcodeDetector({
-        formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"],
-      });
+      const reader = new BrowserMultiFormatReader();
+      readerRef.current = reader;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
+      const controls = await reader.decodeFromVideoDevice(
+        undefined,
+        videoRef.current,
+        (result) => {
+          if (!result) return;
 
-      streamRef.current = stream;
+          const raw = String(result.getText?.() || "").trim();
+          if (!raw) return;
 
-      const v = videoRef.current;
-      if (!v) throw new Error("Video element not ready.");
+          console.log("ZXing barcode:", raw);
 
-      v.srcObject = stream;
-      v.setAttribute("playsinline", "true");
-      await v.play();
+          setBarcode(raw);
+          setMsg({ type: "ok", text: `Scanned: ${raw}` });
 
-      const tick = async () => {
-        // Modal might have been closed mid-loop
-        if (!videoRef.current || !detectorRef.current) return;
+          stopCameraScan();
 
-        try {
-          const barcodes = await detectorRef.current.detect(videoRef.current);
-          if (barcodes && barcodes.length) {
-            const raw = String(barcodes[0]?.rawValue || "").trim();
-            if (raw) {
-              setBarcode(raw);
-              setMsg({ type: "ok", text: `Scanned: ${raw}` });
-
-              stopCameraScan();
-              setScanBusy(false);
-
-              // move them on
-              setTimeout(() => qtyRef.current?.focus(), 50);
-              return;
-            }
-          }
-        } catch (e) {
-          // Some devices throw intermittently; don’t spam
+          setTimeout(() => {
+            qtyRef.current?.focus();
+            qtyRef.current?.select?.();
+          }, 50);
         }
+      );
 
-        rafRef.current = requestAnimationFrame(tick);
-      };
+      controlsRef.current = controls;
+      console.log("ZXing started");
+    } catch (err) {
+      console.error("ZXing scanner failed:", err);
 
-      rafRef.current = requestAnimationFrame(tick);
-    } catch (e) {
-      stopCameraScan();
+      setScanMsg({
+        type: "error",
+        text: String(err?.message || err),
+      });
+
       setScanBusy(false);
-      setScanMsg({ type: "error", text: String(e?.message || e) });
+      setScanOpen(false);
     }
   };
 
@@ -829,17 +802,20 @@ export default function Dashboard() {
                       />
                     </div>
 
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={busy || scanBusy}
-                      onClick={startCameraScan}
-                      className="rounded-xl border border-slate-700/60 bg-slate-950/30 hover:bg-slate-900/40 text-slate-100"
-                      title="Open camera scanner"
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Scan
-                    </Button>
+                    <MobileBarcodeScanner
+  onScan={(code) => {
+    const scannedCode = String(code || "").trim();
+    if (!scannedCode) return;
+
+    setBarcode(scannedCode);
+    setMsg({ type: "ok", text: `Scanned: ${scannedCode}` });
+
+    setTimeout(() => {
+      qtyRef.current?.focus();
+      qtyRef.current?.select?.();
+    }, 50);
+  }}
+/>
                   </div>
 
                   <div className="mt-2 text-[0.7rem] text-slate-500">
@@ -995,7 +971,13 @@ export default function Dashboard() {
                 </div>
 
                 <div className="mt-3 overflow-hidden rounded-2xl border border-slate-800/70 bg-black">
-                  <video ref={videoRef} className="h-72 w-full object-cover" />
+                  <video
+  ref={videoRef}
+  autoPlay
+  muted
+  playsInline
+  className="h-72 w-full object-cover"
+/>
                 </div>
 
                 <div className="mt-3 text-xs text-slate-400">

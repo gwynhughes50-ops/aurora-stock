@@ -143,7 +143,29 @@ export default function Inventory() {
       );
     });
   }, [items, search, showArchived]);
+const handleBarcodeScan = (code) => {
+  const scannedCode = String(code || "").trim();
 
+  if (!scannedCode) return;
+
+  console.log("Scanned barcode:", scannedCode);
+
+  setSearch(scannedCode);
+
+  const match = (items || []).find(
+    (item) => String(item?.barcode || "").trim() === scannedCode
+  );
+
+  if (match && !isArchivedItem(match)) {
+    console.log("Matched item:", match);
+
+    setActiveItem(match);
+    setMoveMode("use");
+    setMoveOpen(true);
+  } else {
+    console.log("No matching active item found");
+  }
+};
   /* handlers */
   const openDelete = (item) => {
     if (!canArchive(role)) return;
