@@ -26,7 +26,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import RequireAuth from "./routes/RequireAuth.jsx";
-
+import MobileLayout from "./mobile/MobileLayout";
 
 function AppRouter() {
   return (
@@ -35,6 +35,7 @@ function AppRouter() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/mobile" element={<MobileLayout />} />
 
       {/* ✅ Optional: standalone loading page */}
       <Route path="/loading" element={<LoadingPage />} />
