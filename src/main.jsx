@@ -15,7 +15,7 @@ import Reports from "./pages/Reports";
 import Compliance from "./pages/Compliance";
 import Notifications from "./pages/Notifications";
 
-import { MedTrakThemeProvider } from "./components/theme/MedTrakThemeProvider";
+import MobileLayout from "./mobile/MobileLayout";
 
 import Help from "./pages/Help";
 import LoadingPage from "./pages/LoadingPage";
@@ -26,21 +26,28 @@ import ForgotPassword from "./pages/ForgotPassword";
 
 import { AuthProvider } from "./contexts/AuthContext.jsx";
 import RequireAuth from "./routes/RequireAuth.jsx";
-import MobileLayout from "./mobile/MobileLayout";
+import { MedTrakThemeProvider } from "./components/theme/MedTrakThemeProvider";
 
 function AppRouter() {
   return (
     <Routes>
-      {/* ✅ PUBLIC */}
+      {/* PUBLIC */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/mobile" element={<MobileLayout />} />
-
-      {/* ✅ Optional: standalone loading page */}
       <Route path="/loading" element={<LoadingPage />} />
 
-      {/* ✅ PRIVATE APP (Layout + auth) */}
+      {/* PRIVATE MOBILE APP */}
+      <Route
+        path="/mobile"
+        element={
+          <RequireAuth>
+            <MobileLayout />
+          </RequireAuth>
+        }
+      />
+
+      {/* PRIVATE DESKTOP APP */}
       <Route
         path="/"
         element={
@@ -61,7 +68,7 @@ function AppRouter() {
         <Route path="notifications" element={<Notifications />} />
       </Route>
 
-      {/* ✅ FALLBACK */}
+      {/* FALLBACK */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
@@ -78,4 +85,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </MedTrakThemeProvider>
   </React.StrictMode>
 );
-

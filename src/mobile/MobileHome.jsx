@@ -1,8 +1,23 @@
 import { AlertTriangle, Package, Thermometer, ArrowRight } from "lucide-react";
-import useStockSummary from "@/hooks/useStockSummary";
+import useStock from "@/hooks/useStock";
 
 export default function MobileHome() {
-    const { totalItems, lowStockItems } = useStockSummary();
+    console.log("MOBILE HOME IS RUNNING");
+    const { items = [], loading } = useStock({ includeArchived: true });
+
+const activeItems = items.filter(
+  (item) => item?.archived_at === null || item?.archived_at === undefined || item?.archived_at === ""
+);
+console.log("loading:", loading);
+console.log("items:", items);
+console.log("total items:", items.length);
+const totalItems = activeItems.length;
+
+const lowStockItems = activeItems.filter((item) => {
+  const current = Number(item?.current_stock ?? 0);
+  const min = Number(item?.min_stock ?? 0);
+  return current <= min;
+}).length;
   return (
     <div className="min-h-screen bg-slate-950 p-4 pb-24 text-white">
       <div className="mb-6">
@@ -11,7 +26,7 @@ export default function MobileHome() {
           Quick actions for busy clinic use
         </p>
       </div>
-
+      
       {/* Summary Cards */}
 <div className="grid grid-cols-2 gap-3">
   <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -22,9 +37,9 @@ export default function MobileHome() {
       <Package className="h-4 w-4 text-emerald-300" />
     </div>
 
-    <p className="mt-2 text-3xl font-bold">
-      {totalItems}
-    </p>
+  <p className="mt-2 text-3xl font-bold">
+  {loading ? "—" : totalItems}
+</p>
   </div>
 
   <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
@@ -33,9 +48,9 @@ export default function MobileHome() {
       <Package className="h-4 w-4 text-amber-300" />
     </div>
 
-    <p className="mt-2 text-3xl font-bold">
-      {lowStockItems}
-    </p>
+  <p className="mt-2 text-3xl font-bold">
+  {loading ? "—" : lowStockItems}
+</p>
   </div>
 
   <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
