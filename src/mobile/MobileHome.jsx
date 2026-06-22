@@ -2,7 +2,7 @@ import { AlertTriangle, Package, Thermometer, ArrowRight } from "lucide-react";
 import useStockSummary from "@/hooks/useStockSummary";
 
 export default function MobileHome() {
-    const { lowStockItems } = useStockSummary();
+    const { totalItems, lowStockItems } = useStockSummary();
   return (
     <div className="min-h-screen bg-slate-950 p-4 pb-24 text-white">
       <div className="mb-6">
@@ -13,35 +13,51 @@ export default function MobileHome() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-300">Low Stock</span>
-            <Package className="h-4 w-4 text-amber-300" />
-          </div>
-          <p className="mt-2 text-3xl font-bold">
-  {lowStockItems}
-</p>
-        </div>
+<div className="grid grid-cols-2 gap-3">
+  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-emerald-300">
+        Stock Items
+      </span>
+      <Package className="h-4 w-4 text-emerald-300" />
+    </div>
 
-        <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-rose-300">Alerts</span>
-            <AlertTriangle className="h-4 w-4 text-rose-300" />
-          </div>
-          <p className="mt-2 text-3xl font-bold">2</p>
-        </div>
+    <p className="mt-2 text-3xl font-bold">
+      {totalItems}
+    </p>
+  </div>
 
-        <div className="col-span-2 rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-sky-300">
-              Temperature Incidents
-            </span>
-            <Thermometer className="h-4 w-4 text-sky-300" />
-          </div>
-          <p className="mt-2 text-3xl font-bold">0</p>
-        </div>
-      </div>
+  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-amber-300">Low Stock</span>
+      <Package className="h-4 w-4 text-amber-300" />
+    </div>
+
+    <p className="mt-2 text-3xl font-bold">
+      {lowStockItems}
+    </p>
+  </div>
+
+  <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-rose-300">Alerts</span>
+      <AlertTriangle className="h-4 w-4 text-rose-300" />
+    </div>
+
+    <p className="mt-2 text-3xl font-bold">2</p>
+  </div>
+
+  <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-sky-300">
+        Temperature
+      </span>
+      <Thermometer className="h-4 w-4 text-sky-300" />
+    </div>
+
+    <p className="mt-2 text-3xl font-bold">0</p>
+  </div>
+</div>
 
       {/* Quick Actions */}
       <div className="mt-6">
