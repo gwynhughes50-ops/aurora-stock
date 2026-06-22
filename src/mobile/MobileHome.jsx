@@ -1,6 +1,8 @@
 import { AlertTriangle, Package, Thermometer, ArrowRight } from "lucide-react";
+import useStockSummary from "@/hooks/useStockSummary";
 
 export default function MobileHome() {
+    const { lowStockItems } = useStockSummary();
   return (
     <div className="min-h-screen bg-slate-950 p-4 pb-24 text-white">
       <div className="mb-6">
@@ -17,7 +19,9 @@ export default function MobileHome() {
             <span className="text-xs text-amber-300">Low Stock</span>
             <Package className="h-4 w-4 text-amber-300" />
           </div>
-          <p className="mt-2 text-3xl font-bold">7</p>
+          <p className="mt-2 text-3xl font-bold">
+  {lowStockItems}
+</p>
         </div>
 
         <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
