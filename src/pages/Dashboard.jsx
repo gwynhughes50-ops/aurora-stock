@@ -273,6 +273,7 @@ export default function Dashboard() {
 
   const [barcode, setBarcode] = useState("");
   const [qtyRaw, setQtyRaw] = useState("1");
+  const [matchedItem, setMatchedItem] = useState(null);
 
   const [manualQuery, setManualQuery] = useState("");
   const [manualAllItems, setManualAllItems] = useState([]);
@@ -299,6 +300,7 @@ export default function Dashboard() {
     setManualQuery("");
     setManualSelected(null);
     setMsg(null);
+    setMatchedItem(null);
     setBusy(false);
     stopCameraScan(); // just in case
   };
@@ -788,7 +790,10 @@ export default function Dashboard() {
                       <Input
                         ref={barcodeRef}
                         value={barcode}
-                        onChange={(e) => setBarcode(e.target.value)}
+                        onChange={(e) => {
+  setBarcode(e.target.value);
+  setMatchedItem(null);
+}}
                         placeholder="Scan barcode…"
                         className="mt-1 bg-slate-950/40 border-slate-800/70 text-slate-100 placeholder:text-slate-500"
                         onKeyDown={(e) => {
@@ -802,13 +807,24 @@ export default function Dashboard() {
                       />
                     </div>
 
-                    <MobileBarcodeScanner
+<MobileBarcodeScanner
   onScan={(code) => {
     const scannedCode = String(code || "").trim();
     if (!scannedCode) return;
 
+    const match = manualAllItems.find(
+      (item) => String(item?.barcode || "").trim() === scannedCode
+    );
+
     setBarcode(scannedCode);
-    setMsg({ type: "ok", text: `Scanned: ${scannedCode}` });
+    setMatchedItem(match || null);
+
+    setMsg({
+      type: match ? "ok" : "error",
+      text: match
+        ? `Scanned: ${match.name || scannedCode}`
+        : `Scanned barcode not found: ${scannedCode}`,
+    });
 
     setTimeout(() => {
       qtyRef.current?.focus();
@@ -821,6 +837,26 @@ export default function Dashboard() {
                   <div className="mt-2 text-[0.7rem] text-slate-500">
                     Tip: many scanners “type” into the box then send Enter automatically.
                   </div>
+
+                  {matchedItem && (
+  <div className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2">
+    <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-emerald-300">
+      Item found
+    </div>
+
+    <div className="mt-1 text-sm font-semibold text-slate-100">
+      {matchedItem.name || "Unnamed item"}
+    </div>
+
+    <div className="mt-1 text-xs text-slate-400">
+      {matchedItem.site || "No site"}
+      {matchedItem.location ? ` • ${matchedItem.location}` : ""}
+      {matchedItem.current_stock !== undefined
+        ? ` • Current stock: ${matchedItem.current_stock}`
+        : ""}
+    </div>
+  </div>
+)}
 
                   {scanMsg?.type === "error" && (
                     <div className="mt-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
