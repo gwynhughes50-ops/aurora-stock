@@ -10,6 +10,7 @@ export default function MobileHome() {
 
   const [latestTemp, setLatestTemp] = useState(null);
   const [tempLoading, setTempLoading] = useState(true);
+  const [recentMoves, setRecentMoves] = useState([]);
 
   const activeItems = items.filter(
     (item) =>
@@ -44,6 +45,24 @@ export default function MobileHome() {
 
     return () => unsub();
   }, []);
+  useEffect(() => {
+  const qMoves = query(
+    collection(db, "stock_movements"),
+    orderBy("created_at", "desc"),
+    limit(3)
+  );
+
+  const unsub = onSnapshot(qMoves, (snap) => {
+    const rows = snap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    setRecentMoves(rows);
+  });
+
+  return () => unsub();
+}, []);
 
   const tempValue = latestTemp?.temp;
 
@@ -105,9 +124,34 @@ export default function MobileHome() {
           Recent Activity
         </h2>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
-          Activity feed coming soon...
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+  {recentMoves.length === 0 ? (
+    <p className="text-sm text-slate-400">
+      No recent activity
+    </p>
+  ) : (
+    <div className="space-y-2">
+      {recentMoves.map((move) => (
+        <div
+          key={move.id}
+          className="border-b border-slate-800 pb-2 last:border-0"
+        >
+          <div className="text-sm font-medium text-white">
+            {move.type === "use" ? "Used" : "Received"}{" "}
+            {move.qty || move.quantity || 0}
+          </div>
+
+          <div className="text-xs text-slate-400">
+            {move.item_name ||
+              move.name ||
+              move.barcode ||
+              "Stock Item"}
+          </div>
         </div>
+      ))}
+    </div>
+  )}
+</div>
       </div>
     </div>
   );
