@@ -151,7 +151,12 @@ export default function MobileBarcodeScanner({ onScan }) {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="gap-2" variant="outline">
+      <Button
+  data-mobile-scan-button
+  onClick={() => setOpen(true)}
+  className="hidden"
+  variant="outline"
+>
         <Camera className="h-4 w-4" />
         Scan
       </Button>
