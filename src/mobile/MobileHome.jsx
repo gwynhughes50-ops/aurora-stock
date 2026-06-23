@@ -101,7 +101,9 @@ export default function MobileHome() {
             <span className="text-xs text-rose-300">Alerts</span>
             <AlertTriangle className="h-4 w-4 text-rose-300" />
           </div>
-          <p className="mt-2 text-3xl font-bold">2</p>
+          <p className="mt-2 text-3xl font-bold">
+  {loading || tempLoading ? "—" : lowStockItems}
+</p>
         </div>
 
         <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
