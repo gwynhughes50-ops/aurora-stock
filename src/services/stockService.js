@@ -487,6 +487,56 @@ export async function useStockQuick({ barcode, qty, actor = null }) {
   return true;
 }
 
+export async function findStockItemByBarcode(barcode) {
+  const raw = String(barcode || "").trim();
+
+  if (!raw) throw new Error("Barcode missing.");
+
+  const key = normalizeBarcode(raw);
+
+  try {
+    const barcodeRef = doc(db, BARCODE_COL, key);
+    const barcodeSnap = await getDoc(barcodeRef);
+
+    if (barcodeSnap.exists()) {
+      const itemId = barcodeSnap.data()?.item_id;
+
+      if (itemId) {
+        const itemRef = doc(db, ITEMS_COL, itemId);
+        const itemSnap = await getDoc(itemRef);
+
+        if (itemSnap.exists()) {
+          return {
+            id: itemSnap.id,
+            ...itemSnap.data(),
+          };
+        }
+      }
+    }
+  } catch {
+    // fallback below
+  }
+
+  const q = query(
+    collection(db, ITEMS_COL),
+    where("barcode", "==", raw),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) {
+    throw new Error("Item not found for this barcode.");
+  }
+
+  const itemSnap = snap.docs[0];
+
+  return {
+    id: itemSnap.id,
+    ...itemSnap.data(),
+  };
+}
+
 /**
  * ✅ Barcode-index driven "USE STOCK" helper (fast)
  */
