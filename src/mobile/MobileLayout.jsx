@@ -128,8 +128,13 @@ const manualResults = useMemo(() => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white pb-20">
-      <MobileHome />
-
+      <MobileHome
+  onSelectItem={(item) => {
+    setUseQty(1);
+    setScanError("");
+    setScannedItem(item);
+  }}
+/>
       {scannedItem && (
         <div className="fixed inset-0 z-[70] flex items-end bg-black/50">
           <div className="w-full rounded-t-3xl border border-teal-400/30 bg-slate-950 p-5 shadow-2xl">

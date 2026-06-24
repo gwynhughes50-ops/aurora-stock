@@ -5,7 +5,7 @@ import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestor
 import useStock from "@/hooks/useStock";
 import { db } from "@/lib/firebase";
 
-export default function MobileHome() {
+export default function MobileHome({ onSelectItem }) {
   const { allItems = [], loading } = useStock({ includeArchived: false });
 
   const [latestTemp, setLatestTemp] = useState(null);
@@ -116,7 +116,7 @@ export default function MobileHome() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
+        <div className="relative z-[60] rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-white">Low Stock</h3>
 
@@ -134,13 +134,23 @@ export default function MobileHome() {
           ) : (
             <div className="mt-3 space-y-2">
               {lowStockList.slice(0, 5).map((item) => (
-                <div key={item.id} className="flex justify-between gap-2 text-sm">
+                <button
+  key={item.id}
+  type="button"
+  onClick={() => {
+    alert(`Selected ${item.name}`);
+    console.log("LOW STOCK ITEM CLICKED:", item);
+    onSelectItem?.(item);
+  }}
+  className="flex w-full justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-800"
+>
+                
                   <span className="truncate text-white">{item.name}</span>
 
                   <span className="shrink-0 text-rose-200">
                     {item.current_stock ?? 0} / {item.min_stock ?? 0}
                   </span>
-                </div>
+                </button>
               ))}
 
               {lowStockList.length > 5 && (
