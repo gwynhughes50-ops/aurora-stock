@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Package, Thermometer } from "lucide-react";
 import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 
@@ -6,26 +6,31 @@ import useStock from "@/hooks/useStock";
 import { db } from "@/lib/firebase";
 
 export default function MobileHome() {
-  const { items = [], loading } = useStock({ includeArchived: true });
+  const { allItems = [], loading } = useStock({ includeArchived: false });
 
   const [latestTemp, setLatestTemp] = useState(null);
   const [tempLoading, setTempLoading] = useState(true);
   const [recentMoves, setRecentMoves] = useState([]);
 
-  const activeItems = items.filter(
-    (item) =>
-      item?.archived_at === null ||
-      item?.archived_at === undefined ||
-      item?.archived_at === ""
-  );
+  const totalItems = allItems.length;
 
-  const totalItems = activeItems.length;
+  const lowStockList = useMemo(() => {
+    return allItems
+      .filter((item) => {
+        const current = Number(item.current_stock || 0);
+        const min = Number(item.min_stock || 0);
 
-  const lowStockItems = activeItems.filter((item) => {
-    const current = Number(item?.current_stock ?? 0);
-    const min = Number(item?.min_stock ?? 0);
-    return current <= min;
-  }).length;
+        return current <= min;
+      })
+      .sort((a, b) => {
+        const aGap = Number(a.current_stock || 0) - Number(a.min_stock || 0);
+        const bGap = Number(b.current_stock || 0) - Number(b.min_stock || 0);
+
+        return aGap - bGap;
+      });
+  }, [allItems]);
+
+  const lowStockCount = lowStockList.length;
 
   useEffect(() => {
     const qTemp = query(
@@ -45,24 +50,25 @@ export default function MobileHome() {
 
     return () => unsub();
   }, []);
+
   useEffect(() => {
-  const qMoves = query(
-    collection(db, "stock_movements"),
-    orderBy("created_at", "desc"),
-    limit(3)
-  );
+    const qMoves = query(
+      collection(db, "stock_movements"),
+      orderBy("created_at", "desc"),
+      limit(3)
+    );
 
-  const unsub = onSnapshot(qMoves, (snap) => {
-    const rows = snap.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const unsub = onSnapshot(qMoves, (snap) => {
+      const rows = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
 
-    setRecentMoves(rows);
-  });
+      setRecentMoves(rows);
+    });
 
-  return () => unsub();
-}, []);
+    return () => unsub();
+  }, []);
 
   const tempValue = latestTemp?.temp;
 
@@ -86,24 +92,14 @@ export default function MobileHome() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-300">Low Stock</span>
-            <Package className="h-4 w-4 text-amber-300" />
-          </div>
-          <p className="mt-2 text-3xl font-bold">
-            {loading ? "—" : lowStockItems}
-          </p>
-        </div>
-
         <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-rose-300">Alerts</span>
             <AlertTriangle className="h-4 w-4 text-rose-300" />
           </div>
           <p className="mt-2 text-3xl font-bold">
-  {loading || tempLoading ? "—" : lowStockItems}
-</p>
+            {loading || tempLoading ? "—" : lowStockCount}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-4">
@@ -119,6 +115,42 @@ export default function MobileHome() {
               : "0"}
           </p>
         </div>
+
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-white">Low Stock</h3>
+
+            <span className="rounded-full bg-rose-500 px-2 py-1 text-xs font-bold text-white">
+              {loading ? "—" : lowStockCount}
+            </span>
+          </div>
+
+          {loading ? (
+            <p className="mt-2 text-sm text-slate-300">Loading...</p>
+          ) : lowStockList.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-300">
+              No low stock items 🎉
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {lowStockList.slice(0, 5).map((item) => (
+                <div key={item.id} className="flex justify-between gap-2 text-sm">
+                  <span className="truncate text-white">{item.name}</span>
+
+                  <span className="shrink-0 text-rose-200">
+                    {item.current_stock ?? 0} / {item.min_stock ?? 0}
+                  </span>
+                </div>
+              ))}
+
+              {lowStockList.length > 5 && (
+                <div className="text-xs text-slate-400">
+                  + {lowStockList.length - 5} more
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-6">
@@ -127,33 +159,28 @@ export default function MobileHome() {
         </h2>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-  {recentMoves.length === 0 ? (
-    <p className="text-sm text-slate-400">
-      No recent activity
-    </p>
-  ) : (
-    <div className="space-y-2">
-      {recentMoves.map((move) => (
-        <div
-          key={move.id}
-          className="border-b border-slate-800 pb-2 last:border-0"
-        >
-          <div className="text-sm font-medium text-white">
-            {move.type === "use" ? "Used" : "Received"}{" "}
-            {move.qty || move.quantity || 0}
-          </div>
+          {recentMoves.length === 0 ? (
+            <p className="text-sm text-slate-400">No recent activity</p>
+          ) : (
+            <div className="space-y-2">
+              {recentMoves.map((move) => (
+                <div
+                  key={move.id}
+                  className="border-b border-slate-800 pb-2 last:border-0"
+                >
+                  <div className="text-sm font-medium text-white">
+                    {move.type === "use" ? "Used" : "Received"}{" "}
+                    {move.qty || move.quantity || 0}
+                  </div>
 
-          <div className="text-xs text-slate-400">
-            {move.item_name ||
-              move.name ||
-              move.barcode ||
-              "Stock Item"}
-          </div>
+                  <div className="text-xs text-slate-400">
+                    {move.item_name || move.name || move.barcode || "Stock Item"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      ))}
-    </div>
-  )}
-</div>
       </div>
     </div>
   );

@@ -145,6 +145,17 @@ const manualResults = useMemo(() => {
               Stock: {scannedItem.current_stock ?? 0}
               {scannedItem.location ? ` • ${scannedItem.location}` : ""}
             </p>
+            {Number(scannedItem.current_stock || 0) <=
+  Number(scannedItem.min_stock || 0) && (
+  <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">
+    ⚠ Low Stock Warning
+    {scannedItem.min_stock !== undefined && (
+      <span className="ml-1 font-normal text-rose-100">
+        Min: {scannedItem.min_stock}
+      </span>
+    )}
+  </div>
+)}
 
             {scannedItem.barcode && (
               <p className="mt-1 text-xs text-slate-500">
