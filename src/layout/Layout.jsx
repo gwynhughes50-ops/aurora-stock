@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Thermometer,
   ClipboardCheck,
+  ClipboardList,
   FileText,
   BarChart3,
   Package,
@@ -35,6 +36,7 @@ export default function Layout() {
     const navItems = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/inventory", label: "Inventory", icon: Boxes },
+    { to: "/reorder-centre", label: "Reorder Centre", icon: ClipboardList },
     { to: "/alerts", label: "Alerts", icon: AlertTriangle },
     { to: "/temperature", label: "Temperature", icon: Thermometer },
     { to: "/compliance", label: "Compliance", icon: ClipboardCheck },

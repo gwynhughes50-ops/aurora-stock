@@ -4,6 +4,7 @@ import useStock from "@/hooks/useStock";
 import MobileHome from "./MobileHome";
 import MobileBottomNav from "./MobileBottomNav";
 import MobileBarcodeScanner from "@/components/ui/MobileBarcodeScanner";
+
 import {
   findStockItemByBarcode,
   applyStockMovement,
@@ -11,39 +12,37 @@ import {
 } from "@/services/stockService";
 
 export default function MobileLayout() {
- const [scannedItem, setScannedItem] = useState(null);
-const [scanError, setScanError] = useState("");
-const [useQty, setUseQty] = useState(1);
-const [useBusy, setUseBusy] = useState(false);
-const [reorderBusy, setReorderBusy] = useState(false);
-const [searchTerm, setSearchTerm] = useState("");
-const [showSearch, setShowSearch] = useState(false);
-const [showReorderForm, setShowReorderForm] = useState(false);
-const [reorderQty, setReorderQty] = useState(1);
-const [reorderNote, setReorderNote] = useState("");
+  const [scannedItem, setScannedItem] = useState(null);
+  const [scanError, setScanError] = useState("");
+  const [useQty, setUseQty] = useState(1);
+  const [useBusy, setUseBusy] = useState(false);
 
-const { allItems = [] } = useStock({ includeArchived: false });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
 
-const manualResults = useMemo(() => {
-  const q = String(searchTerm || "").trim().toLowerCase();
+  const [reorderBusy, setReorderBusy] = useState(false);
+  const [showReorderForm, setShowReorderForm] = useState(false);
+  const [reorderQty, setReorderQty] = useState(1);
+  const [reorderNote, setReorderNote] = useState("");
 
-  if (!q) return [];
+  const { allItems = [] } = useStock({ includeArchived: false });
 
-  return allItems
-    .filter((item) => {
-      return (
+  const manualResults = useMemo(() => {
+    const q = String(searchTerm || "").trim().toLowerCase();
+    if (!q) return [];
+
+    return allItems
+      .filter((item) =>
         String(item.name || "").toLowerCase().includes(q) ||
         String(item.barcode || "").toLowerCase().includes(q) ||
         String(item.location || "").toLowerCase().includes(q) ||
         String(item.category || "").toLowerCase().includes(q)
-      );
-    })
-    .slice(0, 8);
-}, [allItems, searchTerm]);
+      )
+      .slice(0, 8);
+  }, [allItems, searchTerm]);
 
   const handleMobileScan = async (code) => {
     const scannedCode = String(code || "").trim();
-
     if (!scannedCode) return;
 
     setScanError("");
@@ -51,17 +50,12 @@ const manualResults = useMemo(() => {
 
     try {
       const item = await findStockItemByBarcode(scannedCode);
-
       setUseQty(1);
-
-      setScannedItem({
-        ...item,
-        barcode: scannedCode,
-      });
-    } catch (err) {
-  setScanError("Item not found. Try searching manually.");
-  setShowSearch(true);
-}
+      setScannedItem({ ...item, barcode: scannedCode });
+    } catch {
+      setScanError("Item not found. Try searching manually.");
+      setShowSearch(true);
+    }
   };
 
   const handleUseStock = async () => {
@@ -89,7 +83,6 @@ const manualResults = useMemo(() => {
       });
 
       alert(`Used ${qty} item(s)`);
-
       setScannedItem(null);
       setUseQty(1);
     } catch (err) {
@@ -120,7 +113,6 @@ const manualResults = useMemo(() => {
       });
 
       alert(`Received ${qty} item(s)`);
-
       setScannedItem(null);
       setUseQty(1);
     } catch (err) {
@@ -131,39 +123,94 @@ const manualResults = useMemo(() => {
     }
   };
 
-const handleRequestReorder = async () => {
-  if (!scannedItem) return;
+  const handleRequestReorder = async () => {
+    if (!scannedItem) return;
 
-  try {
-    setReorderBusy(true);
+    try {
+      setReorderBusy(true);
 
-    await createReorderRequest({
-      ...scannedItem,
-      requested_qty: Number(reorderQty || 1),
-      note: reorderNote || "",
-    });
+      await createReorderRequest({
+        ...scannedItem,
+        requested_qty: Number(reorderQty || 1),
+        note: reorderNote || "",
+      });
 
-    alert("Reorder request created");
+      alert("Reorder request created");
 
-    setShowReorderForm(false);
-    setReorderQty(1);
-    setReorderNote("");
-  } catch (err) {
-    console.error(err);
-    alert("Failed to create reorder request");
-  } finally {
-    setReorderBusy(false);
-  }
-};
+      setShowReorderForm(false);
+      setReorderQty(1);
+      setReorderNote("");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create reorder request");
+    } finally {
+      setReorderBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white pb-20">
       <MobileHome
-  onSelectItem={(item) => {
-    setUseQty(1);
-    setScanError("");
-    setScannedItem(item);
-  }}
-/>
+        onSelectItem={(item) => {
+          setUseQty(1);
+          setScanError("");
+          setScannedItem(item);
+        }}
+      />
+
+      {showReorderForm && (
+        <div className="fixed inset-0 z-[80] flex items-end bg-black/50">
+          <div className="w-full rounded-t-3xl border border-amber-500/30 bg-slate-950 p-5">
+            <h2 className="text-xl font-bold text-white">Reorder Request</h2>
+
+            <p className="mt-1 text-slate-400">{scannedItem?.name}</p>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm text-slate-300">
+                Quantity Required
+              </label>
+
+              <input
+                type="number"
+                min="1"
+                value={reorderQty}
+                onChange={(e) => setReorderQty(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-white"
+              />
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm text-slate-300">Note</label>
+
+              <textarea
+                value={reorderNote}
+                onChange={(e) => setReorderNote(e.target.value)}
+                rows={3}
+                placeholder="Optional note..."
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-white"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRequestReorder}
+              disabled={reorderBusy}
+              className="mt-4 w-full rounded-xl bg-amber-500 px-3 py-3 font-semibold text-slate-950 disabled:opacity-50"
+            >
+              {reorderBusy ? "Creating..." : "Submit Request"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowReorderForm(false)}
+              className="mt-3 w-full rounded-xl bg-slate-800 px-3 py-3 text-white"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {scannedItem && (
         <div className="fixed inset-0 z-[70] flex items-end bg-black/50">
           <div className="w-full rounded-t-3xl border border-teal-400/30 bg-slate-950 p-5 shadow-2xl">
@@ -179,17 +226,18 @@ const handleRequestReorder = async () => {
               Stock: {scannedItem.current_stock ?? 0}
               {scannedItem.location ? ` • ${scannedItem.location}` : ""}
             </p>
+
             {Number(scannedItem.current_stock || 0) <=
-  Number(scannedItem.min_stock || 0) && (
-  <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">
-    ⚠ Low Stock Warning
-    {scannedItem.min_stock !== undefined && (
-      <span className="ml-1 font-normal text-rose-100">
-        Min: {scannedItem.min_stock}
-      </span>
-    )}
-  </div>
-)}
+              Number(scannedItem.min_stock || 0) && (
+              <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">
+                ⚠ Low Stock Warning
+                {scannedItem.min_stock !== undefined && (
+                  <span className="ml-1 font-normal text-rose-100">
+                    Min: {scannedItem.min_stock}
+                  </span>
+                )}
+              </div>
+            )}
 
             {scannedItem.barcode && (
               <p className="mt-1 text-xs text-slate-500">
@@ -214,11 +262,7 @@ const handleRequestReorder = async () => {
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => {
-  setReorderQty(1);
-  setReorderNote("");
-  setShowReorderForm(true);
-}}
+                onClick={handleUseStock}
                 disabled={useBusy}
                 className="rounded-xl bg-teal-400 px-3 py-3 text-sm font-bold text-slate-950 disabled:opacity-50"
               >
@@ -234,14 +278,19 @@ const handleRequestReorder = async () => {
                 {useBusy ? "Updating..." : "Receive"}
               </button>
             </div>
+
             <button
-  type="button"
-  onClick={handleRequestReorder}
-  disabled={reorderBusy}
-  className="mt-3 w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-200 disabled:opacity-50"
->
-  {reorderBusy ? "Creating Request..." : "Request Reorder"}
-</button>
+              type="button"
+              onClick={() => {
+                setReorderQty(1);
+                setReorderNote("");
+                setShowReorderForm(true);
+              }}
+              disabled={reorderBusy}
+              className="mt-3 w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-200 disabled:opacity-50"
+            >
+              Request Reorder
+            </button>
 
             <button
               type="button"
@@ -259,60 +308,57 @@ const handleRequestReorder = async () => {
           {scanError}
         </div>
       )}
+
       {showSearch && (
-  <div className="fixed inset-0 z-[75] bg-slate-950 p-4">
-    <div className="mx-auto max-w-xl">
-      <h2 className="mb-4 text-xl font-bold text-white">
-        Search Stock
-      </h2>
+        <div className="fixed inset-0 z-[75] bg-slate-950 p-4">
+          <div className="mx-auto max-w-xl">
+            <h2 className="mb-4 text-xl font-bold text-white">Search Stock</h2>
 
-      <input
-        autoFocus
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder="Search by name, barcode, category..."
-        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white"
-      />
+            <input
+              autoFocus
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, barcode, category..."
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white"
+            />
 
-      <div className="mt-4 space-y-2">
-        {manualResults.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => {
-              setScannedItem(item);
-              setShowSearch(false);
-              setSearchTerm("");
-              setScanError("");
-            }}
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-left"
-          >
-            <div className="font-semibold text-white">
-              {item.name}
+            <div className="mt-4 space-y-2">
+              {manualResults.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setScannedItem(item);
+                    setShowSearch(false);
+                    setSearchTerm("");
+                    setScanError("");
+                  }}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-left"
+                >
+                  <div className="font-semibold text-white">{item.name}</div>
+
+                  <div className="text-sm text-slate-400">
+                    Stock: {item.current_stock ?? 0}
+                    {item.location ? ` • ${item.location}` : ""}
+                  </div>
+                </button>
+              ))}
             </div>
 
-            <div className="text-sm text-slate-400">
-              Stock: {item.current_stock ?? 0}
-              {item.location ? ` • ${item.location}` : ""}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          setShowSearch(false);
-          setSearchTerm("");
-        }}
-        className="mt-4 w-full rounded-xl bg-slate-800 px-4 py-3 text-white"
-      >
-        Close
-      </button>
-    </div>
-  </div>
-)}
+            <button
+              type="button"
+              onClick={() => {
+                setShowSearch(false);
+                setSearchTerm("");
+              }}
+              className="mt-4 w-full rounded-xl bg-slate-800 px-4 py-3 text-white"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       <MobileBarcodeScanner onScan={handleMobileScan} />
 
