@@ -565,3 +565,21 @@ export async function useStockByBarcode({ barcode, qty, actor = null }) {
 
   return true;
 }
+
+export async function createReorderRequest(item, actor = null) {
+  if (!item?.id) throw new Error("Item missing.");
+
+  return addDoc(collection(db, "reorder_requests"), {
+    item_id: item.id,
+    item_name: item.name || "Unnamed item",
+    current_stock: Number(item.current_stock || 0),
+    min_stock: Number(item.min_stock || 0),
+    requested_qty: Number(item.requested_qty || 1),
+    note: item.note || "",
+    site: item.site || null,
+    location: item.location || null,
+    status: "pending",
+    actor,
+    created_at: serverTimestamp(),
+  });
+}

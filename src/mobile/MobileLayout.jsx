@@ -7,6 +7,7 @@ import MobileBarcodeScanner from "@/components/ui/MobileBarcodeScanner";
 import {
   findStockItemByBarcode,
   applyStockMovement,
+  createReorderRequest,
 } from "@/services/stockService";
 
 export default function MobileLayout() {
@@ -14,8 +15,12 @@ export default function MobileLayout() {
 const [scanError, setScanError] = useState("");
 const [useQty, setUseQty] = useState(1);
 const [useBusy, setUseBusy] = useState(false);
+const [reorderBusy, setReorderBusy] = useState(false);
 const [searchTerm, setSearchTerm] = useState("");
 const [showSearch, setShowSearch] = useState(false);
+const [showReorderForm, setShowReorderForm] = useState(false);
+const [reorderQty, setReorderQty] = useState(1);
+const [reorderNote, setReorderNote] = useState("");
 
 const { allItems = [] } = useStock({ includeArchived: false });
 
@@ -126,6 +131,30 @@ const manualResults = useMemo(() => {
     }
   };
 
+const handleRequestReorder = async () => {
+  if (!scannedItem) return;
+
+  try {
+    setReorderBusy(true);
+
+    await createReorderRequest({
+      ...scannedItem,
+      requested_qty: Number(reorderQty || 1),
+      note: reorderNote || "",
+    });
+
+    alert("Reorder request created");
+
+    setShowReorderForm(false);
+    setReorderQty(1);
+    setReorderNote("");
+  } catch (err) {
+    console.error(err);
+    alert("Failed to create reorder request");
+  } finally {
+    setReorderBusy(false);
+  }
+};
   return (
     <div className="min-h-screen bg-slate-950 text-white pb-20">
       <MobileHome
@@ -185,7 +214,11 @@ const manualResults = useMemo(() => {
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={handleUseStock}
+                onClick={() => {
+  setReorderQty(1);
+  setReorderNote("");
+  setShowReorderForm(true);
+}}
                 disabled={useBusy}
                 className="rounded-xl bg-teal-400 px-3 py-3 text-sm font-bold text-slate-950 disabled:opacity-50"
               >
@@ -201,6 +234,14 @@ const manualResults = useMemo(() => {
                 {useBusy ? "Updating..." : "Receive"}
               </button>
             </div>
+            <button
+  type="button"
+  onClick={handleRequestReorder}
+  disabled={reorderBusy}
+  className="mt-3 w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm font-semibold text-amber-200 disabled:opacity-50"
+>
+  {reorderBusy ? "Creating Request..." : "Request Reorder"}
+</button>
 
             <button
               type="button"
