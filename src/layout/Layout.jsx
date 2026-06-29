@@ -22,6 +22,7 @@ import {
   LogOut,
   UserPlus,
   LifeBuoy,
+  Building2,
 } from "lucide-react";
 
 export default function Layout() {
@@ -37,6 +38,7 @@ export default function Layout() {
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/inventory", label: "Inventory", icon: Boxes },
     { to: "/reorder-centre", label: "Reorder Centre", icon: ClipboardList },
+    { to: "/suppliers", label: "Suppliers", icon: Building2 },
     { to: "/alerts", label: "Alerts", icon: AlertTriangle },
     { to: "/temperature", label: "Temperature", icon: Thermometer },
     { to: "/compliance", label: "Compliance", icon: ClipboardCheck },

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ import AnaphylaxisBoxesTab from "@/components/Inventory/AnaphylaxisBoxesTab";
 
 import useStock from "@/hooks/useStock";
 import { getRole, canArchive, canEdit, canMoveStock } from "@/auth/permissions";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { collection, onSnapshot, query } from "firebase/firestore";
 
 import { Search, Package, Pencil, History, Trash2, Archive, RotateCcw } from "lucide-react";
 
@@ -96,9 +97,15 @@ export default function Inventory() {
     location: "",
     category: "",
     min_stock: 0,
+    preferred_supplier_id: "",
+    preferred_supplier_name: "",
+    supplier_sku: "",
+    order_quantity: 1,
+    lead_time_days: 0,
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [suppliers, setSuppliers] = useState([]);
 
   /**
    * IMPORTANT:
@@ -107,6 +114,28 @@ export default function Inventory() {
    */
   const { items, loading, error, archiveItem, restoreItem, receiveStock, useStockQty, addItem, updateItem } =
     useStock({ includeArchived: true });
+
+  useEffect(() => {
+    const qSuppliers = query(collection(db, "suppliers"));
+
+    const unsub = onSnapshot(
+      qSuppliers,
+      (snap) => {
+        const rows = snap.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        setSuppliers(rows.filter((supplier) => supplier.active !== false));
+      },
+      (err) => {
+        console.error("Supplier subscription failed:", err);
+        setSuppliers([]);
+      }
+    );
+
+    return () => unsub();
+  }, []);
 
   const counts = useMemo(() => {
     const total = Array.isArray(items) ? items.length : 0;
@@ -207,6 +236,11 @@ const handleBarcodeScan = (code) => {
       location: item?.location ?? "",
       category: item?.category ?? "",
       min_stock: typeof item?.min_stock === "number" ? item.min_stock : Number(item?.min_stock ?? 0) || 0,
+      preferred_supplier_id: item?.preferred_supplier_id ?? "",
+      preferred_supplier_name: item?.preferred_supplier_name ?? "",
+      supplier_sku: item?.supplier_sku ?? "",
+      order_quantity: typeof item?.order_quantity === "number" ? item.order_quantity : Number(item?.order_quantity ?? 1) || 1,
+      lead_time_days: typeof item?.lead_time_days === "number" ? item.lead_time_days : Number(item?.lead_time_days ?? 0) || 0,
     });
     setEditError("");
     setEditOpen(true);
@@ -245,6 +279,11 @@ const handleBarcodeScan = (code) => {
         location,
         category: (editForm.category || "").trim(),
         min_stock: Number(editForm.min_stock) || 0,
+        preferred_supplier_id: editForm.preferred_supplier_id || "",
+        preferred_supplier_name: editForm.preferred_supplier_name || "",
+        supplier_sku: (editForm.supplier_sku || "").trim(),
+        order_quantity: Number(editForm.order_quantity) || 1,
+        lead_time_days: Number(editForm.lead_time_days) || 0,
       };
 
       await updateItem(editItem.id, payload, { actor: actorUser });
@@ -373,6 +412,13 @@ const handleBarcodeScan = (code) => {
                           {item.category ? `${item.category}` : ""}
                           {item.category && item.min_stock !== undefined ? " - " : ""}
                           {item.min_stock !== undefined ? `Min: ${item.min_stock}` : ""}
+                        </p>
+                      )}
+
+                      {item.preferred_supplier_name && (
+                        <p className="mt-1 text-[11px] text-cyan-300 truncate">
+                          Supplier: {item.preferred_supplier_name}
+                          {item.supplier_sku ? ` - SKU: ${item.supplier_sku}` : ""}
                         </p>
                       )}
                     </div>
@@ -539,6 +585,70 @@ const handleBarcodeScan = (code) => {
                           onChange={(e) => setEditForm((f) => ({ ...f, min_stock: e.target.value }))}
                           placeholder="0"
                         />
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-cyan-300">
+                        Supplier Information
+                      </p>
+
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Preferred supplier</p>
+                        <select
+                          value={editForm.preferred_supplier_id}
+                          onChange={(e) => {
+                            const supplier = suppliers.find((row) => row.id === e.target.value);
+
+                            setEditForm((f) => ({
+                              ...f,
+                              preferred_supplier_id: supplier?.id || "",
+                              preferred_supplier_name: supplier?.name || "",
+                              lead_time_days: supplier?.lead_time_days ?? f.lead_time_days ?? 0,
+                            }));
+                          }}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                        >
+                          <option value="">No preferred supplier</option>
+                          {suppliers.map((supplier) => (
+                            <option key={supplier.id} value={supplier.id}>
+                              {supplier.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Supplier SKU</p>
+                          <Input
+                            value={editForm.supplier_sku}
+                            onChange={(e) => setEditForm((f) => ({ ...f, supplier_sku: e.target.value }))}
+                            placeholder="e.g. GLV-2218"
+                          />
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Order qty</p>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={editForm.order_quantity}
+                            onChange={(e) => setEditForm((f) => ({ ...f, order_quantity: e.target.value }))}
+                            placeholder="1"
+                          />
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Lead time</p>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={editForm.lead_time_days}
+                            onChange={(e) => setEditForm((f) => ({ ...f, lead_time_days: e.target.value }))}
+                            placeholder="0"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
