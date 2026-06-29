@@ -16,6 +16,7 @@ import Compliance from "./pages/Compliance";
 import Notifications from "./pages/Notifications";
 import ReorderCentre from "@/pages/ReorderCentre";
 import SupplierDirectory from "@/pages/SupplierDirectory";
+import Purchasing from "@/pages/Purchasing";
 import MobileLayout from "./mobile/MobileLayout";
 
 import Help from "./pages/Help";
@@ -61,6 +62,7 @@ function AppRouter() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="reorder-centre" element={<ReorderCentre />} />
+        <Route path="purchasing" element={<Purchasing />} />
         <Route path="suppliers" element={<SupplierDirectory />} />
         <Route path="alerts" element={<Alerts />} />
         <Route path="temperature" element={<TemperatureLog />} />

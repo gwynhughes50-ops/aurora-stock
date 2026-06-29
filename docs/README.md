@@ -1,42 +1,88 @@
-# MedTrak+ v0.9.3 Inventory Supplier Integration
+# MedTrak+ Build v0.9.5 - Purchasing Integration Model
 
-## What this release contains
+## Purpose
+This build strengthens the Purchasing module and prepares MedTrak+ for future supplier ordering integrations.
 
-This package contains a corrected and working `Inventory.jsx` file with supplier integration added safely.
+## Updated files
 
-## Files included
+- `src/pages/Purchasing.jsx`
+- `src/pages/SupplierDirectory.jsx`
+- `docs/CHANGELOG-v0.9.5.md`
+- `docs/firestore-purchasing-rules.md`
 
-- `src/pages/Inventory.jsx`
-- `CHANGELOG.md`
-- `docs/firestore-supplier-rules.md`
+## What changed
 
-## Install
+### Purchasing
+- Adds a fuller Purchasing module with tabs for:
+  - Basket
+  - Purchase Orders
+  - Deliveries
+  - Supplier Performance
+- Keeps the correct ERP model: one purchase order per supplier containing multiple items.
+- Groups approved reorder requests by supplier.
+- Creates purchase orders with multiple line items.
+- Stores supplier submission data on purchase orders.
+- Adds integration-ready fields:
+  - `submission_method`
+  - `submission_status`
+  - `supplier_ordering_method`
+  - `supplier_ordering_email`
+  - `supplier_portal_url`
+  - `external_order_reference`
+  - `supports_auto_ordering`
 
-1. Back up your current file:
-   - `src/pages/Inventory.jsx`
-2. Copy the included `src/pages/Inventory.jsx` into your project.
-3. Make sure your Firestore rules include access to the `suppliers` collection.
-4. Restart Vite:
+### Suppliers
+- Extends the Supplier Directory to support future external ordering routes:
+  - Manual
+  - Email
+  - Supplier Portal
+  - CSV Upload
+  - API
+  - EDI / NHS Procurement
+- Adds supplier metadata:
+  - contact name
+  - phone
+  - ordering email
+  - portal URL
+  - account number
+  - lead time
+  - delivery days
+  - API provider
+  - notes
+  - preferred supplier
+  - supports auto ordering
+  - requires portal login
 
-```bash
-Ctrl + C
-npm run dev
-```
+## Important note
+This build does not send orders directly to suppliers yet. It prepares the internal data model so that email, portal, CSV, API, or EDI ordering can be added later without redesigning the purchasing workflow.
 
-## Test checklist
+## Testing checklist
 
-- Inventory page loads.
-- Stock cards display correctly.
-- Edit item dialog opens.
-- Supplier dropdown appears in edit item.
-- Selecting a supplier saves supplier details to the stock item.
-- Existing stock actions still work: Use, Receive, History, Photo, Archive, Restore.
-- Emergency Drugs and Anaphylaxis tabs still open.
+After installing:
 
-## Suggested commit
+1. Open Suppliers.
+2. Add or update a supplier with an ordering method.
+3. Open Purchasing.
+4. Confirm approved reorder requests appear in supplier baskets.
+5. Create a purchase order from a supplier basket.
+6. Confirm one PO is created with multiple items.
+7. Mark the PO Ready.
+8. Mark the PO Submitted.
+9. Mark it Awaiting Delivery.
+10. Check Deliveries tab.
+11. Confirm Inventory, Mobile, Reorder Centre and Dashboard still load.
+
+## Recommended commit
 
 ```bash
 git add .
-git commit -m "feat: link inventory items to suppliers"
+git commit -m "release(v0.9.5): add integration-ready purchasing workflow"
 git push
+```
+
+## Recommended tag
+
+```bash
+git tag v0.9.5
+git push origin v0.9.5
 ```

@@ -23,6 +23,7 @@ import {
   UserPlus,
   LifeBuoy,
   Building2,
+  ShoppingCart,
 } from "lucide-react";
 
 export default function Layout() {
@@ -38,6 +39,7 @@ export default function Layout() {
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/inventory", label: "Inventory", icon: Boxes },
     { to: "/reorder-centre", label: "Reorder Centre", icon: ClipboardList },
+    { to: "/purchasing", label: "Purchasing", icon: ShoppingCart },
     { to: "/suppliers", label: "Suppliers", icon: Building2 },
     { to: "/alerts", label: "Alerts", icon: AlertTriangle },
     { to: "/temperature", label: "Temperature", icon: Thermometer },

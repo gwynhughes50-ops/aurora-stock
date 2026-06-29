@@ -574,12 +574,21 @@ export async function createReorderRequest(item, actor = null) {
     item_name: item.name || "Unnamed item",
     current_stock: Number(item.current_stock || 0),
     min_stock: Number(item.min_stock || 0),
-    requested_qty: Number(item.requested_qty || 1),
+    requested_qty: Number(item.requested_qty || item.order_quantity || 1),
     note: item.note || "",
     site: item.site || null,
     location: item.location || null,
+
+    // Supplier fields support the Purchasing Basket and Purchase Order workflow.
+    supplier_id: item.preferred_supplier_id || item.supplier_id || "",
+    supplier_name: item.preferred_supplier_name || item.supplier_name || "",
+    supplier_sku: item.supplier_sku || "",
+    order_quantity: Number(item.order_quantity || item.requested_qty || 1),
+    lead_time_days: Number(item.lead_time_days || 0),
+
     status: "pending",
     actor,
     created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
   });
 }
