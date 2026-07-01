@@ -51,6 +51,7 @@ export default function MobileLayout() {
     try {
       const item = await findStockItemByBarcode(scannedCode);
       setUseQty(1);
+      setReorderQty(Number(item?.order_quantity || 1));
       setScannedItem({ ...item, barcode: scannedCode });
     } catch {
       setScanError("Item not found. Try searching manually.");
@@ -153,6 +154,7 @@ export default function MobileLayout() {
       <MobileHome
         onSelectItem={(item) => {
           setUseQty(1);
+          setReorderQty(Number(item?.order_quantity || 1));
           setScanError("");
           setScannedItem(item);
         }}
@@ -164,6 +166,14 @@ export default function MobileLayout() {
             <h2 className="text-xl font-bold text-white">Reorder Request</h2>
 
             <p className="mt-1 text-slate-400">{scannedItem?.name}</p>
+
+            {(scannedItem?.preferred_supplier_name || scannedItem?.supplier_sku) && (
+              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">
+                <div>Supplier: {scannedItem?.preferred_supplier_name || "Not set"}</div>
+                <div>SKU: {scannedItem?.supplier_sku || "Not set"}</div>
+                <div>Suggested order qty: {scannedItem?.order_quantity || 1}</div>
+              </div>
+            )}
 
             <div className="mt-4">
               <label className="mb-1 block text-sm text-slate-300">
@@ -226,6 +236,13 @@ export default function MobileLayout() {
               Stock: {scannedItem.current_stock ?? 0}
               {scannedItem.location ? ` • ${scannedItem.location}` : ""}
             </p>
+
+            {(scannedItem.preferred_supplier_name || scannedItem.supplier_sku) && (
+              <p className="mt-1 text-xs text-slate-400">
+                Supplier: {scannedItem.preferred_supplier_name || "Not set"}
+                {scannedItem.supplier_sku ? ` • SKU: ${scannedItem.supplier_sku}` : ""}
+              </p>
+            )}
 
             {Number(scannedItem.current_stock || 0) <=
               Number(scannedItem.min_stock || 0) && (
@@ -329,6 +346,7 @@ export default function MobileLayout() {
                   key={item.id}
                   type="button"
                   onClick={() => {
+                    setReorderQty(Number(item?.order_quantity || 1));
                     setScannedItem(item);
                     setShowSearch(false);
                     setSearchTerm("");

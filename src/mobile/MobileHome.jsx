@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Package, Thermometer } from "lucide-react";
+import { AlertTriangle, Package, ShoppingCart, Thermometer, Truck } from "lucide-react";
 import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 
 import useStock from "@/hooks/useStock";
@@ -11,6 +11,8 @@ export default function MobileHome({ onSelectItem }) {
   const [latestTemp, setLatestTemp] = useState(null);
   const [tempLoading, setTempLoading] = useState(true);
   const [recentMoves, setRecentMoves] = useState([]);
+  const [reorderRequests, setReorderRequests] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
 
   const totalItems = allItems.length;
 
@@ -70,14 +72,44 @@ export default function MobileHome({ onSelectItem }) {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const qRequests = query(collection(db, "reorder_requests"), limit(100));
+
+    const unsub = onSnapshot(qRequests, (snap) => {
+      const rows = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setReorderRequests(rows);
+    });
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const qOrders = query(collection(db, "purchase_orders"), limit(100));
+
+    const unsub = onSnapshot(qOrders, (snap) => {
+      const rows = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setPurchaseOrders(rows);
+    });
+
+    return () => unsub();
+  }, []);
+
+  const pendingReorders = reorderRequests.filter(
+    (request) => (request.status || "pending") === "pending"
+  ).length;
+
+  const awaitingDeliveries = purchaseOrders.filter((order) =>
+    ["sent", "awaiting_delivery", "part_delivered"].includes(order.status || "")
+  ).length;
+
   const tempValue = latestTemp?.temp;
 
   return (
     <div className="min-h-screen bg-slate-950 p-4 pb-24 text-white">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Aurora Mobile</h1>
+        <h1 className="text-2xl font-bold">MedTrak+ Mobile</h1>
         <p className="text-sm text-slate-400">
-          Quick actions for busy clinic use
+Quick actions for MedTrak+ stock and purchasing
         </p>
       </div>
 
@@ -116,6 +148,22 @@ export default function MobileHome({ onSelectItem }) {
           </p>
         </div>
 
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-amber-300">Reorder Requests</span>
+            <ShoppingCart className="h-4 w-4 text-amber-300" />
+          </div>
+          <p className="mt-2 text-3xl font-bold">{pendingReorders}</p>
+        </div>
+
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-violet-300">Awaiting Delivery</span>
+            <Truck className="h-4 w-4 text-violet-300" />
+          </div>
+          <p className="mt-2 text-3xl font-bold">{awaitingDeliveries}</p>
+        </div>
+
         <div className="relative z-[60] rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-white">Low Stock</h3>
@@ -137,11 +185,7 @@ export default function MobileHome({ onSelectItem }) {
                 <button
   key={item.id}
   type="button"
-  onClick={() => {
-    alert(`Selected ${item.name}`);
-    console.log("LOW STOCK ITEM CLICKED:", item);
-    onSelectItem?.(item);
-  }}
+  onClick={() => onSelectItem?.(item)}
   className="flex w-full justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-800"
 >
                 
