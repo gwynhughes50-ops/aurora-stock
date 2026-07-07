@@ -13,6 +13,10 @@ function fmt(ts) {
   }
 }
 
+function productSubtitle(row) {
+  return [row?.item_strength || row?.strength, row?.item_form || row?.form].filter(Boolean).join(" • ");
+}
+
 export default function StockHistoryDialog({ open, onOpenChange, item }) {
   const [rows, setRows] = useState([]);
   const [err, setErr] = useState(null);
@@ -42,6 +46,7 @@ export default function StockHistoryDialog({ open, onOpenChange, item }) {
           <div>
             <p className="text-sm font-semibold">Stock history</p>
             <p className="text-xs text-slate-400">{item?.name || ""}</p>
+            {productSubtitle(item) && <p className="text-xs text-teal-200">{productSubtitle(item)}</p>}
           </div>
           <button
             type="button"
@@ -87,6 +92,22 @@ export default function StockHistoryDialog({ open, onOpenChange, item }) {
                     {m.reason && m.notes ? " • " : ""}
                     {m.notes ? m.notes : ""}
                   </p>
+                )}
+
+                {m.receipt_details && (
+                  <div className="mt-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-2 text-xs text-cyan-100">
+                    <div className="font-semibold">Receipt details</div>
+                    <div>
+                      {[
+                        m.receipt_details.brand ? `Brand: ${m.receipt_details.brand}` : "",
+                        m.receipt_details.barcode ? `Barcode: ${m.receipt_details.barcode}` : "",
+                        m.receipt_details.batch_number ? `Batch: ${m.receipt_details.batch_number}` : "",
+                        m.receipt_details.expiry_date ? `Expiry: ${m.receipt_details.expiry_date}` : "",
+                        m.receipt_details.supplier_name ? `Supplier: ${m.receipt_details.supplier_name}` : "",
+                        m.receipt_details.po_number ? `PO: ${m.receipt_details.po_number}` : "",
+                      ].filter(Boolean).join(" • ")}
+                    </div>
+                  </div>
                 )}
               </Card>
             ))

@@ -47,6 +47,16 @@ function useStockImpl(options = {}) {
       type: "receive",
       qty,
       actor: meta?.actor || null,
+      reason: meta?.reason || null,
+      notes: meta?.notes || null,
+      brand: meta?.brand || "",
+      barcode: meta?.barcode || "",
+      batch_number: meta?.batch_number || "",
+      expiry_date: meta?.expiry_date || "",
+      supplier_id: meta?.supplier_id || "",
+      supplier_name: meta?.supplier_name || "",
+      purchase_order_id: meta?.purchase_order_id || "",
+      po_number: meta?.po_number || "",
     });
   };
 
@@ -55,6 +65,8 @@ function useStockImpl(options = {}) {
       type: "use",
       qty,
       actor: meta?.actor || null,
+      reason: meta?.reason || null,
+      notes: meta?.notes || null,
     });
   };
 
@@ -90,6 +102,9 @@ function useStockImpl(options = {}) {
     return items.filter((it) => {
       const name = String(it?.name || "").toLowerCase();
       const barcode = String(it?.barcode || "").toLowerCase();
+      const strength = String(it?.strength || "").toLowerCase();
+      const form = String(it?.form || "").toLowerCase();
+      const productKey = String(it?.product_identity_key || "").toLowerCase();
       const category = String(it?.category || "").toLowerCase();
       const site = String(it?.site || "").toLowerCase();
       const location = String(it?.location || "").toLowerCase();
@@ -98,6 +113,9 @@ function useStockImpl(options = {}) {
       return (
         name.includes(q) ||
         barcode.includes(q) ||
+        strength.includes(q) ||
+        form.includes(q) ||
+        productKey.includes(q) ||
         category.includes(q) ||
         site.includes(q) ||
         location.includes(q) ||

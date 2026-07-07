@@ -24,6 +24,10 @@ export default function StockMovementDialog({
   const [qtyRaw, setQtyRaw] = useState("1");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
+  const [brand, setBrand] = useState("");
+  const [receiptBarcode, setReceiptBarcode] = useState("");
+  const [batchNumber, setBatchNumber] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const panelRef = useRef(null);
   const qtyRef = useRef(null);
 
@@ -32,6 +36,10 @@ export default function StockMovementDialog({
     setQtyRaw("1");
     setReason("");
     setNotes("");
+    setBrand("");
+    setReceiptBarcode("");
+    setBatchNumber("");
+    setExpiryDate("");
     const t = setTimeout(() => qtyRef.current?.focus(), 50);
 
     const onKey = (e) => {
@@ -91,6 +99,9 @@ export default function StockMovementDialog({
           {/* Item header */}
           <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
   <div className="font-semibold text-white">{item?.name || "Item"}</div>
+  {(item?.strength || item?.form) && (
+    <div className="text-xs text-teal-200">{[item?.strength, item?.form].filter(Boolean).join(" • ")}</div>
+  )}
   <div className="text-sm text-slate-200">Current stock: {current}</div>
 </div>
 
@@ -136,6 +147,35 @@ export default function StockMovementDialog({
             </div>
           </div>
 
+          {mode === "receive" && (
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-200">Receipt details</p>
+              <p className="mb-3 text-xs text-cyan-100/80">Barcode, batch and expiry belong to this delivery and may change next time.</p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-slate-300">Brand</label>
+                  <Input className="mt-1 bg-slate-900 border-slate-700 text-slate-100" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Optional" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300">Barcode received</label>
+                  <Input className="mt-1 bg-slate-900 border-slate-700 text-slate-100" value={receiptBarcode} onChange={(e) => setReceiptBarcode(e.target.value)} placeholder="Optional" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300">Batch / lot</label>
+                  <Input className="mt-1 bg-slate-900 border-slate-700 text-slate-100" value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="Optional" />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300">Expiry date</label>
+                  <Input className="mt-1 bg-slate-900 border-slate-700 text-slate-100" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Reason */}
           <div>
             <label className="text-xs text-slate-300">Reason</label>
@@ -174,7 +214,17 @@ export default function StockMovementDialog({
           </Button>
           <Button
             className="bg-amber-400 text-slate-950 hover:bg-amber-300"
-            onClick={() => onConfirm?.({ qty, reason, notes })}
+            onClick={() =>
+              onConfirm?.({
+                qty,
+                reason,
+                notes,
+                brand,
+                barcode: receiptBarcode,
+                batch_number: batchNumber,
+                expiry_date: expiryDate,
+              })
+            }
           >
             {mode === "use" ? "Use stock" : "Receive stock"}
           </Button>

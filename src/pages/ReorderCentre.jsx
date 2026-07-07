@@ -19,6 +19,10 @@ function titleCase(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function productSubtitle(row) {
+  return [row?.item_strength || row?.strength, row?.item_form || row?.form].filter(Boolean).join(" • ");
+}
+
 export default function ReorderCentre() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -212,6 +216,9 @@ export default function ReorderCentre() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="font-bold text-white">{req.item_name || "Unnamed item"}</h3>
+                    {productSubtitle(req) && (
+                      <p className="mt-1 text-sm font-semibold text-teal-200">{productSubtitle(req)}</p>
+                    )}
 
                     <p className="mt-1 text-sm text-slate-400">
                       {req.site || "No site"}

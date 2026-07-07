@@ -46,10 +46,21 @@ function normalizeItemPatch(patch = {}) {
   if ("barcode" in out) out.barcode = cleanString(out.barcode);
   if ("site" in out) out.site = cleanString(out.site);
   if ("location" in out) out.location = cleanString(out.location);
+  if ("strength" in out) out.strength = cleanString(out.strength);
+  if ("form" in out) out.form = cleanString(out.form);
+  if ("brand" in out) out.brand = cleanString(out.brand);
   if ("batch_number" in out) out.batch_number = cleanString(out.batch_number);
   if ("photo_url" in out) out.photo_url = cleanString(out.photo_url);
   if ("unit" in out) out.unit = cleanString(out.unit);
   if ("expiry_date" in out) out.expiry_date = cleanString(out.expiry_date);
+
+  const productParts = [out.name, out.strength, out.form]
+    .filter(Boolean)
+    .map((part) => cleanString(part).toLowerCase());
+
+  if (productParts.length) {
+    out.product_identity_key = productParts.join("|");
+  }
 
   return out;
 }
@@ -100,10 +111,13 @@ export function subscribeToStock(onData, onError, { includeArchived = false } = 
 export async function createStockItem(data) {
   const payload = normalizeItemPatch({
     name: cleanString(data?.name),
+    strength: cleanString(data?.strength),
+    form: cleanString(data?.form),
     barcode: cleanString(data?.barcode),
     category: data?.category || "non_medical",
     site: cleanString(data?.site),
     location: cleanString(data?.location),
+    brand: cleanString(data?.brand),
     batch_number: cleanString(data?.batch_number),
     expiry_date: cleanString(data?.expiry_date),
 
@@ -364,6 +378,12 @@ export async function applyStockMovement(itemId, movement) {
 
     const item = snap.data();
     const item_name = item?.name || ""; // ✅ snapshot name for audit
+    const item_strength = item?.strength || "";
+    const item_form = item?.form || "";
+    const product_identity_key = item?.product_identity_key || [item_name, item_strength, item_form]
+      .filter(Boolean)
+      .map((part) => String(part).trim().toLowerCase())
+      .join("|");
     const before = toNumber(item.current_stock, 0);
 
     let after = before;
@@ -394,6 +414,18 @@ export async function applyStockMovement(itemId, movement) {
     const reason = movement?.reason || null;
     const notes = movement?.notes || null;
     const actor = normalizeActor(movement?.actor);
+    const receiptDetails = type === "receive"
+      ? {
+          brand: cleanString(movement?.brand),
+          barcode: cleanString(movement?.barcode),
+          batch_number: cleanString(movement?.batch_number),
+          expiry_date: cleanString(movement?.expiry_date),
+          supplier_id: cleanString(movement?.supplier_id),
+          supplier_name: cleanString(movement?.supplier_name),
+          purchase_order_id: cleanString(movement?.purchase_order_id),
+          po_number: cleanString(movement?.po_number),
+        }
+      : null;
 
     tx.update(itemRef, {
       current_stock: after,
@@ -413,6 +445,9 @@ export async function applyStockMovement(itemId, movement) {
     tx.set(moveRef, {
       item_id: itemId,
       item_name,
+      item_strength,
+      item_form,
+      product_identity_key,
       type,
       delta,
       qty_before: before,
@@ -420,6 +455,7 @@ export async function applyStockMovement(itemId, movement) {
       reason,
       notes,
       actor,
+      receipt_details: receiptDetails,
       created_at: serverTimestamp(),
     });
 
@@ -572,6 +608,12 @@ export async function createReorderRequest(item, actor = null) {
   return addDoc(collection(db, "reorder_requests"), {
     item_id: item.id,
     item_name: item.name || "Unnamed item",
+    item_strength: item.strength || "",
+    item_form: item.form || "",
+    product_identity_key: item.product_identity_key || [item.name, item.strength, item.form]
+      .filter(Boolean)
+      .map((part) => String(part).trim().toLowerCase())
+      .join("|"),
     current_stock: Number(item.current_stock || 0),
     min_stock: Number(item.min_stock || 0),
     requested_qty: Number(item.requested_qty || item.order_quantity || 1),

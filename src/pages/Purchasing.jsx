@@ -13,8 +13,6 @@ import {
   BarChart3,
   Building2,
   ExternalLink,
-  Eye,
-  ClipboardCopy,
   PackageCheck,
   Send,
   ShoppingCart,
@@ -51,44 +49,6 @@ function asDateLabel(value) {
 function titleCase(value) {
   const text = String(value || "").replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-function buildOrderSummary(order) {
-  const lines = [
-    `Purchase Order: ${order?.po_number || order?.id || "Draft"}`,
-    `Supplier: ${order?.supplier_name || "No supplier"}`,
-    `Status: ${titleCase(order?.status || "draft")}`,
-    "",
-    "Items:",
-  ];
-
-  (order?.items || []).forEach((item) => {
-    const qty = item.approved_qty || item.requested_qty || 0;
-    const sku = item.supplier_sku ? ` | SKU: ${item.supplier_sku}` : "";
-    lines.push(`- ${item.item_name || "Unnamed item"} x${qty}${sku}`);
-  });
-
-  lines.push("", `Total Qty: ${order?.total_qty || 0}`);
-  return lines.join("\n");
-}
-
-async function copyOrderSummary(order) {
-  const text = buildOrderSummary(order);
-
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    alert("Purchase order copied to clipboard");
-    return;
-  }
-
-  window.prompt("Copy purchase order text", text);
-}
-
-function getMailtoHref(order) {
-  const email = order?.supplier_ordering_email || "";
-  const subject = encodeURIComponent(`Purchase Order ${order?.po_number || ""}`.trim());
-  const body = encodeURIComponent(buildOrderSummary(order));
-  return `mailto:${email}?subject=${subject}&body=${body}`;
 }
 
 function getSupplierName(request, suppliersById) {
@@ -159,6 +119,10 @@ function OrderingMethodBadge({ method }) {
   );
 }
 
+function productSubtitle(row) {
+  return [row?.item_strength || row?.strength, row?.item_form || row?.form].filter(Boolean).join(" • ");
+}
+
 export default function Purchasing() {
   const [requests, setRequests] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -168,7 +132,6 @@ export default function Purchasing() {
   const [supplierLoading, setSupplierLoading] = useState(true);
   const [busySupplierKey, setBusySupplierKey] = useState(null);
   const [busyOrderId, setBusyOrderId] = useState(null);
-  const [selectedOrder, setSelectedOrder] = useState(null);
   const [activeTab, setActiveTab] = useState("basket");
 
   useEffect(() => {
@@ -310,6 +273,9 @@ export default function Purchasing() {
         reorder_request_id: request.id,
         item_id: request.item_id || "",
         item_name: request.item_name || "Unnamed item",
+        item_strength: request.item_strength || request.strength || "",
+        item_form: request.item_form || request.form || "",
+        product_identity_key: request.product_identity_key || "",
         barcode: request.barcode || "",
         supplier_sku: request.supplier_sku || "",
         requested_qty: Number(request.requested_qty || request.order_quantity || 1),
@@ -436,94 +402,6 @@ export default function Purchasing() {
 
   return (
     <div className="min-h-screen bg-slate-950 p-6 text-white">
-      {selectedOrder && (
-        <div className="fixed inset-0 z-[90] flex items-end bg-black/70 p-0 sm:items-center sm:justify-center sm:p-6">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-950 p-5 shadow-2xl sm:rounded-3xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-bold text-white">{selectedOrder.po_number || selectedOrder.id}</h2>
-                <p className="mt-1 text-sm text-slate-400">{selectedOrder.supplier_name || "No supplier"}</p>
-              </div>
-              <StatusPill status={selectedOrder.status || "draft"} />
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <div className="rounded-xl bg-slate-900 p-3 text-sm">
-                <div className="text-slate-500">Items</div>
-                <div className="font-bold text-white">{selectedOrder.total_items ?? selectedOrder.items?.length ?? 0}</div>
-              </div>
-              <div className="rounded-xl bg-slate-900 p-3 text-sm">
-                <div className="text-slate-500">Total Qty</div>
-                <div className="font-bold text-white">{selectedOrder.total_qty ?? 0}</div>
-              </div>
-              <div className="rounded-xl bg-slate-900 p-3 text-sm">
-                <div className="text-slate-500">Method</div>
-                <div className="font-bold text-white">{titleCase(selectedOrder.submission_method || "manual")}</div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">
-              <div>Created: {asDateLabel(selectedOrder.created_at)}</div>
-              <div>Submission: {titleCase(selectedOrder.submission_status || "draft")}</div>
-              <div>Email: {selectedOrder.supplier_ordering_email || "Not recorded"}</div>
-              <div>Portal: {selectedOrder.supplier_portal_url || "Not recorded"}</div>
-              <div>External reference: {selectedOrder.external_order_reference || "Not recorded"}</div>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {(selectedOrder.items || []).map((item, index) => (
-                <div key={`${selectedOrder.id}-${item.reorder_request_id || item.item_id || index}`} className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-white">{item.item_name || "Unnamed item"}</div>
-                      <div className="text-xs text-slate-400">
-                        {item.supplier_sku ? `SKU: ${item.supplier_sku}` : "No supplier SKU"}
-                        {item.barcode ? ` • Barcode: ${item.barcode}` : ""}
-                        {item.location ? ` • ${item.location}` : ""}
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="font-bold text-emerald-300">x{item.approved_qty || item.requested_qty || 0}</div>
-                      <div className="text-xs text-slate-500">Received {item.received_qty || 0}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 grid gap-2 sm:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => copyOrderSummary(selectedOrder)}
-                className="rounded-xl border border-slate-700 px-3 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-              >
-                Copy Order Text
-              </button>
-
-              {selectedOrder.supplier_ordering_email ? (
-                <a
-                  href={getMailtoHref(selectedOrder)}
-                  className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-3 text-center text-sm font-semibold text-blue-200"
-                >
-                  Email Supplier
-                </a>
-              ) : (
-                <button type="button" disabled className="rounded-xl border border-slate-800 px-3 py-3 text-sm font-semibold text-slate-500">
-                  No Email
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(null)}
-                className="rounded-xl bg-slate-800 px-3 py-3 text-sm font-semibold text-white"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="mb-6 flex items-center gap-3">
         <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-300">
           <ShoppingCart className="h-6 w-6" />
@@ -658,6 +536,9 @@ export default function Purchasing() {
                           <div className="flex justify-between gap-3">
                             <div className="min-w-0">
                               <div className="truncate font-semibold text-white">{request.item_name}</div>
+                              {productSubtitle(request) && (
+                                <div className="text-xs text-teal-200">{productSubtitle(request)}</div>
+                              )}
                               <div className="text-xs text-slate-400">
                                 {request.supplier_sku ? `SKU: ${request.supplier_sku}` : "No supplier SKU"}
                                 {request.location ? ` • ${request.location}` : ""}
@@ -748,7 +629,12 @@ export default function Purchasing() {
                     <div className="mt-3 space-y-1 text-sm text-slate-300">
                       {order.items.slice(0, 5).map((item) => (
                         <div key={`${order.id}-${item.reorder_request_id || item.item_id}`} className="flex justify-between gap-3">
-                          <span className="truncate">{item.item_name}</span>
+                          <span className="min-w-0 truncate">
+                            <span className="block truncate">{item.item_name}</span>
+                            {productSubtitle(item) && (
+                              <span className="block truncate text-xs text-teal-200">{productSubtitle(item)}</span>
+                            )}
+                          </span>
                           <span className="shrink-0 text-slate-400">x{item.approved_qty || item.requested_qty || 0}</span>
                         </div>
                       ))}
@@ -757,22 +643,6 @@ export default function Purchasing() {
                   )}
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedOrder(order)}
-                      className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-                    >
-                      <span className="inline-flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> View</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => copyOrderSummary(order)}
-                      className="rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-                    >
-                      <span className="inline-flex items-center gap-1"><ClipboardCopy className="h-3.5 w-3.5" /> Copy</span>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => markReadyToSend(order)}
@@ -855,14 +725,6 @@ export default function Purchasing() {
                   <div className="mt-3 text-sm text-slate-300">
                     {order.total_items || order.items?.length || 0} item{(order.total_items || order.items?.length || 0) === 1 ? "" : "s"} • Qty {order.total_qty || 0}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOrder(order)}
-                    className="mt-4 w-full rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
-                  >
-                    View Purchase Order
-                  </button>
 
                   <button
                     type="button"

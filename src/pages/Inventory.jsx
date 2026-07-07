@@ -51,6 +51,10 @@ function isArchivedItem(it) {
   return v !== null && v !== undefined && v !== "";
 }
 
+function productSubtitle(item) {
+  return [item?.strength, item?.form].filter(Boolean).join(" • ");
+}
+
 export default function Inventory() {
   /* auth */
   const user = auth.currentUser ?? null;
@@ -92,6 +96,9 @@ export default function Inventory() {
   const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({
     name: "",
+    strength: "",
+    form: "",
+    brand: "",
     barcode: "",
     site: "",
     location: "",
@@ -159,6 +166,9 @@ export default function Inventory() {
     return base.filter((it) => {
       const name = String(it?.name || "").toLowerCase();
       const barcode = String(it?.barcode || "").toLowerCase();
+      const strength = String(it?.strength || "").toLowerCase();
+      const form = String(it?.form || "").toLowerCase();
+      const productKey = String(it?.product_identity_key || "").toLowerCase();
       const site = String(it?.site || "").toLowerCase();
       const location = String(it?.location || "").toLowerCase();
       const category = String(it?.category || "").toLowerCase();
@@ -166,6 +176,9 @@ export default function Inventory() {
       return (
         name.includes(q) ||
         barcode.includes(q) ||
+        strength.includes(q) ||
+        form.includes(q) ||
+        productKey.includes(q) ||
         site.includes(q) ||
         location.includes(q) ||
         category.includes(q)
@@ -231,6 +244,9 @@ const handleBarcodeScan = (code) => {
     setEditItem(item);
     setEditForm({
       name: item?.name ?? "",
+      strength: item?.strength ?? "",
+      form: item?.form ?? "",
+      brand: item?.brand ?? "",
       barcode: item?.barcode ?? "",
       site: item?.site ?? "",
       location: item?.location ?? "",
@@ -254,6 +270,8 @@ const handleBarcodeScan = (code) => {
 
     try {
       const name = (editForm.name || "").trim();
+      const strength = (editForm.strength || "").trim();
+      const form = (editForm.form || "").trim();
       const site = (editForm.site || "").trim();
       const location = (editForm.location || "").trim();
 
@@ -274,6 +292,9 @@ const handleBarcodeScan = (code) => {
 
       const payload = {
         name,
+        strength,
+        form,
+        brand: (editForm.brand || "").trim(),
         barcode: (editForm.barcode || "").trim(),
         site,
         location,
@@ -395,7 +416,11 @@ const handleBarcodeScan = (code) => {
                     <div className="min-w-0">
                       <p className="font-semibold truncate">{item.name}</p>
 
-                      {item.barcode && <p className="text-xs text-slate-400 truncate">{item.barcode}</p>}
+                      {productSubtitle(item) && (
+                        <p className="text-xs text-teal-200 truncate">{productSubtitle(item)}</p>
+                      )}
+
+                      {item.barcode && <p className="text-xs text-slate-400 truncate">Barcode: {item.barcode}</p>}
 
                       {(item.site || item.location) && (
                         <p className="mt-1 text-xs text-slate-300 flex items-center gap-1 truncate">
@@ -509,12 +534,22 @@ const handleBarcodeScan = (code) => {
             onOpenChange={setMoveOpen}
             item={activeItem}
             mode={moveMode}
-            onConfirm={async ({ qty }) => {
+            onConfirm={async ({ qty, reason, notes, brand, barcode, batch_number, expiry_date }) => {
               if (!activeItem) return;
               if (moveMode === "receive") {
-                await receiveStock(activeItem.id, qty, { actor: actorUser });
+                await receiveStock(activeItem.id, qty, {
+                  actor: actorUser,
+                  reason,
+                  notes,
+                  brand,
+                  barcode,
+                  batch_number,
+                  expiry_date,
+                  supplier_id: activeItem?.preferred_supplier_id || "",
+                  supplier_name: activeItem?.preferred_supplier_name || "",
+                });
               } else {
-                await useStockQty(activeItem.id, qty, { actor: actorUser });
+                await useStockQty(activeItem.id, qty, { actor: actorUser, reason, notes });
               }
             }}
           />
@@ -536,6 +571,39 @@ const handleBarcodeScan = (code) => {
                         onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                         placeholder="e.g. Syringe 10ml"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Strength</p>
+                        <Input
+                          value={editForm.strength}
+                          onChange={(e) => setEditForm((f) => ({ ...f, strength: e.target.value }))}
+                          placeholder="e.g. 500mg"
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Form</p>
+                        <Input
+                          value={editForm.form}
+                          onChange={(e) => setEditForm((f) => ({ ...f, form: e.target.value }))}
+                          placeholder="e.g. tablets"
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400 mb-1">Brand</p>
+                        <Input
+                          value={editForm.brand}
+                          onChange={(e) => setEditForm((f) => ({ ...f, brand: e.target.value }))}
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-xs text-cyan-100">
+                      Product identity is based on name, strength and form. Barcode, batch and expiry may change with each delivery.
                     </div>
 
                     <div>

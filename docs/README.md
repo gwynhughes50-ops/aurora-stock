@@ -1,88 +1,78 @@
-# MedTrak+ Build v0.9.5 - Purchasing Integration Model
+# MedTrak+ Build v0.9.10 – MedTrak Pulse Foundation
 
-## Purpose
-This build strengthens the Purchasing module and prepares MedTrak+ for future supplier ordering integrations.
+## Summary
 
-## Updated files
+This build introduces the first foundation version of **MedTrak Pulse**, the floating circular Surgery Status indicator.
 
-- `src/pages/Purchasing.jsx`
-- `src/pages/SupplierDirectory.jsx`
-- `docs/CHANGELOG-v0.9.5.md`
-- `docs/firestore-purchasing-rules.md`
+Pulse is designed to sit quietly on screen and only draw attention when the overall operational health score drops.
 
-## What changed
+## Updated / New Files
 
-### Purchasing
-- Adds a fuller Purchasing module with tabs for:
-  - Basket
-  - Purchase Orders
-  - Deliveries
-  - Supplier Performance
-- Keeps the correct ERP model: one purchase order per supplier containing multiple items.
-- Groups approved reorder requests by supplier.
-- Creates purchase orders with multiple line items.
-- Stores supplier submission data on purchase orders.
-- Adds integration-ready fields:
-  - `submission_method`
-  - `submission_status`
-  - `supplier_ordering_method`
-  - `supplier_ordering_email`
-  - `supplier_portal_url`
-  - `external_order_reference`
-  - `supports_auto_ordering`
+```text
+src/services/pulseService.js
+src/hooks/usePulse.js
+src/components/pulse/PulseWidget.jsx
+src/layout/Layout.jsx
+src/mobile/MobileLayout.jsx
+docs/CHANGELOG-v0.9.10.md
+```
 
-### Suppliers
-- Extends the Supplier Directory to support future external ordering routes:
-  - Manual
-  - Email
-  - Supplier Portal
-  - CSV Upload
-  - API
-  - EDI / NHS Procurement
-- Adds supplier metadata:
-  - contact name
-  - phone
-  - ordering email
-  - portal URL
-  - account number
-  - lead time
-  - delivery days
-  - API provider
-  - notes
-  - preferred supplier
-  - supports auto ordering
-  - requires portal login
+## What Pulse does in this build
 
-## Important note
-This build does not send orders directly to suppliers yet. It prepares the internal data model so that email, portal, CSV, API, or EDI ordering can be added later without redesigning the purchasing workflow.
+- Shows a circular health score.
+- Sits globally on desktop pages.
+- Shows a compact mobile version.
+- Can be clicked to expand.
+- Shows module scores for Inventory, Purchasing, Compliance, Assets, Estates, Workforce and Governance.
+- Uses real signals from:
+  - stock_items
+  - reorder_requests
+  - purchase_orders
+  - temperature_incidents
+- Remembers desktop position using localStorage.
+- Drag to move on desktop.
 
-## Testing checklist
+## Current scoring model
 
-After installing:
+This is a foundation model only.
 
-1. Open Suppliers.
-2. Add or update a supplier with an ordering method.
-3. Open Purchasing.
-4. Confirm approved reorder requests appear in supplier baskets.
-5. Create a purchase order from a supplier basket.
-6. Confirm one PO is created with multiple items.
-7. Mark the PO Ready.
-8. Mark the PO Submitted.
-9. Mark it Awaiting Delivery.
-10. Check Deliveries tab.
-11. Confirm Inventory, Mobile, Reorder Centre and Dashboard still load.
+- Inventory score is affected by low/out-of-stock items.
+- Purchasing score is affected by pending/approved requests and open orders.
+- Compliance score is affected by open temperature incidents.
+- Assets, Estates, Workforce and Governance are currently placeholder 100% scores ready for future modules.
 
-## Recommended commit
+## Firestore Rules
+
+No new Firestore collections are required for this build.
+
+Pulse reads existing collections only. Make sure the user can read:
+
+```text
+stock_items
+reorder_requests
+purchase_orders
+temperature_incidents
+```
+
+## Testing Checklist
+
+- Dashboard loads.
+- Pulse appears on desktop.
+- Pulse opens when clicked.
+- Pulse module rows navigate to relevant areas.
+- Pulse can be dragged on desktop.
+- Pulse appears in mobile view.
+- Inventory still works.
+- Purchasing still works.
+- Reorder Centre still works.
+- Mobile scanner still works.
+
+## Suggested Commit
 
 ```bash
 git add .
-git commit -m "release(v0.9.5): add integration-ready purchasing workflow"
+git commit -m "release(v0.9.10): add MedTrak Pulse foundation"
 git push
-```
-
-## Recommended tag
-
-```bash
-git tag v0.9.5
-git push origin v0.9.5
+git tag v0.9.10
+git push origin v0.9.10
 ```

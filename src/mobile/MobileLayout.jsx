@@ -4,12 +4,17 @@ import useStock from "@/hooks/useStock";
 import MobileHome from "./MobileHome";
 import MobileBottomNav from "./MobileBottomNav";
 import MobileBarcodeScanner from "@/components/ui/MobileBarcodeScanner";
+import PulseWidget from "@/components/pulse/PulseWidget";
 
 import {
   findStockItemByBarcode,
   applyStockMovement,
   createReorderRequest,
 } from "@/services/stockService";
+
+function productSubtitle(item) {
+  return [item?.strength, item?.form].filter(Boolean).join(" • ");
+}
 
 export default function MobileLayout() {
   const [scannedItem, setScannedItem] = useState(null);
@@ -34,6 +39,9 @@ export default function MobileLayout() {
     return allItems
       .filter((item) =>
         String(item.name || "").toLowerCase().includes(q) ||
+        String(item.strength || "").toLowerCase().includes(q) ||
+        String(item.form || "").toLowerCase().includes(q) ||
+        String(item.product_identity_key || "").toLowerCase().includes(q) ||
         String(item.barcode || "").toLowerCase().includes(q) ||
         String(item.location || "").toLowerCase().includes(q) ||
         String(item.category || "").toLowerCase().includes(q)
@@ -51,7 +59,6 @@ export default function MobileLayout() {
     try {
       const item = await findStockItemByBarcode(scannedCode);
       setUseQty(1);
-      setReorderQty(Number(item?.order_quantity || 1));
       setScannedItem({ ...item, barcode: scannedCode });
     } catch {
       setScanError("Item not found. Try searching manually.");
@@ -154,7 +161,6 @@ export default function MobileLayout() {
       <MobileHome
         onSelectItem={(item) => {
           setUseQty(1);
-          setReorderQty(Number(item?.order_quantity || 1));
           setScanError("");
           setScannedItem(item);
         }}
@@ -165,15 +171,10 @@ export default function MobileLayout() {
           <div className="w-full rounded-t-3xl border border-amber-500/30 bg-slate-950 p-5">
             <h2 className="text-xl font-bold text-white">Reorder Request</h2>
 
-            <p className="mt-1 text-slate-400">{scannedItem?.name}</p>
-
-            {(scannedItem?.preferred_supplier_name || scannedItem?.supplier_sku) && (
-              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">
-                <div>Supplier: {scannedItem?.preferred_supplier_name || "Not set"}</div>
-                <div>SKU: {scannedItem?.supplier_sku || "Not set"}</div>
-                <div>Suggested order qty: {scannedItem?.order_quantity || 1}</div>
-              </div>
-            )}
+            <p className="mt-1 text-slate-400">
+              {scannedItem?.name}
+              {productSubtitle(scannedItem) ? ` • ${productSubtitle(scannedItem)}` : ""}
+            </p>
 
             <div className="mt-4">
               <label className="mb-1 block text-sm text-slate-300">
@@ -232,17 +233,16 @@ export default function MobileLayout() {
               {scannedItem.name || "Unnamed item"}
             </p>
 
+            {productSubtitle(scannedItem) && (
+              <p className="mt-1 text-sm font-semibold text-teal-200">
+                {productSubtitle(scannedItem)}
+              </p>
+            )}
+
             <p className="mt-2 text-sm text-slate-300">
               Stock: {scannedItem.current_stock ?? 0}
               {scannedItem.location ? ` • ${scannedItem.location}` : ""}
             </p>
-
-            {(scannedItem.preferred_supplier_name || scannedItem.supplier_sku) && (
-              <p className="mt-1 text-xs text-slate-400">
-                Supplier: {scannedItem.preferred_supplier_name || "Not set"}
-                {scannedItem.supplier_sku ? ` • SKU: ${scannedItem.supplier_sku}` : ""}
-              </p>
-            )}
 
             {Number(scannedItem.current_stock || 0) <=
               Number(scannedItem.min_stock || 0) && (
@@ -346,7 +346,6 @@ export default function MobileLayout() {
                   key={item.id}
                   type="button"
                   onClick={() => {
-                    setReorderQty(Number(item?.order_quantity || 1));
                     setScannedItem(item);
                     setShowSearch(false);
                     setSearchTerm("");
@@ -355,6 +354,9 @@ export default function MobileLayout() {
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-left"
                 >
                   <div className="font-semibold text-white">{item.name}</div>
+                  {productSubtitle(item) && (
+                    <div className="text-xs text-teal-200">{productSubtitle(item)}</div>
+                  )}
 
                   <div className="text-sm text-slate-400">
                     Stock: {item.current_stock ?? 0}
@@ -379,6 +381,8 @@ export default function MobileLayout() {
       )}
 
       <MobileBarcodeScanner onScan={handleMobileScan} />
+
+      <PulseWidget variant="mobile" />
 
       <MobileBottomNav
         onScanClick={() => {

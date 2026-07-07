@@ -6,6 +6,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 import useNotifications from "@/hooks/useNotifications";
+import PulseWidget from "@/components/pulse/PulseWidget";
 
 import {
   LayoutDashboard,
@@ -24,6 +25,7 @@ import {
   LifeBuoy,
   Building2,
   ShoppingCart,
+  Settings,
 } from "lucide-react";
 
 export default function Layout() {
@@ -41,6 +43,7 @@ export default function Layout() {
     { to: "/reorder-centre", label: "Reorder Centre", icon: ClipboardList },
     { to: "/purchasing", label: "Purchasing", icon: ShoppingCart },
     { to: "/suppliers", label: "Suppliers", icon: Building2 },
+    { to: "/practice-admin", label: "Practice Admin", icon: Settings },
     { to: "/alerts", label: "Alerts", icon: AlertTriangle },
     { to: "/temperature", label: "Temperature", icon: Thermometer },
     { to: "/compliance", label: "Compliance", icon: ClipboardCheck },
@@ -179,6 +182,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <PulseWidget />
     </div>
   );
 }
